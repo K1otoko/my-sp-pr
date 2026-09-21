@@ -1,0 +1,288 @@
+# my-sp-pr · AI 编程规则与开发指南
+
+本文件适用于整个项目，供 AI 编程工具和开发者在执行任务前阅读。
+支持 AGENTS.md 约定的工具可按其规则加载；其他工具请在会话中明确要求：“先阅读根目录 AGENTS.md，再处理本次任务。”
+先读关键规则和项目地图，再按任务查找相关章节，无需每次加载全部源码。
+
+## 1. 关键规则
+
+1. 先检查相关代码与配置，确认目标项目、现有行为和验收标准；保留用户已有修改。
+2. 小范围修复可直接完成；新功能、跨服务改动、共享契约修改或新增依赖先给方案，用户确认后实施。
+3. 已批准范围内的实现、接口生成和必要验证不重复请求确认。用户明确要求只规划时保持只读。
+4. 所有前端业务 API 经 Gateway；不在前端直连内部服务或重复声明服务地址。
+5. 接口定义集中在 `backend/contracts/src/contract.ts`；SDK、OpenAPI 和 dist 由工具生成，禁止直接手改。
+6. **只对本次实际修改或新增的手写代码文件执行显式路径 lint，禁止全项目 lint、format 或 fix。**
+7. **禁止移除已有 console.log。** 不以格式化、重构或清理日志为由删除。
+8. 沿用现有技术栈和包边界；不通过跨应用源码导入、扩大 rootDir 或关闭类型检查绕过问题。
+9. 当前未实现的登录、权限和业务功能不能用模拟成功状态冒充完成。
+10. 只报告实际完成的修改和验证；类型检查、构建、运行时测试分别说明，未验证的项目明确标注。
+
+用户当前要求和已批准决策确定任务目标；源码与配置确认实现事实，[README](README.md) 提供操作说明。
+历史计划位于 `.trae/documents/`，仅作背景参考。发现文档、代码或用户要求存在冲突时，指出具体差异再处理。
+
+## 2. 当前项目与请求链路
+
+这是一个 pnpm workspace：三个前端、四个后端、一个内部契约包。
+目前提供可运行骨架、真实健康检查、Gateway HTTP 转发、OpenAPI 与 SDK 生成。
+账号、登录、会话、权限、聊天和管理业务尚未实现，也未接入数据库或持久化。
+
+技术栈：Node.js 24、pnpm 10.25.0、TypeScript strict；前端使用 React 19、Vite 8、React Router 7、Tailwind CSS 4、ahooks；后端使用 Express 5、Zod 4。
+具体依赖版本以各 package.json 和锁文件为准，不在无关任务中升级。
+
+| 项目路径 | 包名 | 职责 | 开发/服务端口 | 预览端口 |
+| --- | --- | --- | --- | --- |
+| `frontend/pr-chat` | `@my-sp-pr/pr-chat-web` | 客户端 | 5173 | 4173 |
+| `frontend/pr-admin` | `@my-sp-pr/pr-admin-web` | 管理平台 | 5174 | 4174 |
+| `frontend/pr-sso` | `@my-sp-pr/pr-sso-web` | 登录系统骨架 | 5175 | 4175 |
+| `backend/gateway` | `@my-sp-pr/gateway` | 统一 API 入口 | 3000 | — |
+| `backend/pr-chat` | `@my-sp-pr/pr-chat-api` | 客户端业务服务 | 3001 | — |
+| `backend/pr-auth` | `@my-sp-pr/pr-auth-api` | 身份服务骨架 | 3002 | — |
+| `backend/pr-admin` | `@my-sp-pr/pr-admin-api` | 管理服务骨架 | 3003 | — |
+| `backend/contracts` | `@my-sp-pr/contracts` | 共享契约库 | 不监听 | — |
+
+请求链路：页面 → Hook → 生成 SDK / apiClient → Gateway → 对应后端服务。
+开发时 Vite 将同源 `/api` 原样代理到 `http://127.0.0.1:3000`；生产由三个前端统一配置网关 API 地址。
+
+| 完整健康路径 | 响应服务 | 对应生成函数 |
+| --- | --- | --- |
+| `/api/health` | gateway 自身 | `getGatewayHealth` |
+| `/api/chat/health` | pr-chat | `getChatHealth` |
+| `/api/admin/health` | pr-admin | `getAdminHealth` |
+| `/api/auth/health` | pr-auth | `getAuthHealth` |
+
+Gateway 自身健康不代表所有下游健康。排查某个前端时检查它对应的下游路径。
+
+## 3. 协作节奏
+
+按变更大小决定是否先确认方案：
+
+| 情况 | 执行方式 |
+| --- | --- |
+| 单个前端或后端内的局部修复，需求和验收明确，不新增依赖、不改变共享契约和服务边界 | 简述处理方向，直接实现并验证 |
+| 新功能、跨服务改动、共享契约修改、新增依赖或基础设施 | 先探索，提交方案，确认后实现 |
+| 业务规则不清、存在多种互斥行为或关键架构取舍 | 先调查能从项目确定的事实，再提出具体问题 |
+| 用户明确指定计划模式 | 只做只读调查和允许的计划文档编写，确认后再实施 |
+
+方案应写清目标、涉及项目、接口或数据变化、实现步骤、兼容影响和验收方法。
+用户已授权的工作继续完成；生成器因此更新多个 SDK 或文档，不需要逐个文件再次确认。
+发现实际范围超出已批准方案时，说明新增影响，先确认扩大部分。
+
+任务开始时定位相关文件和现有改动；不要顺带重构无关模块或改写用户代码。
+能从代码回答的问题先查代码，搜索优先使用 `rg` / `rg --files`。
+执行中说明关键发现与阻塞，结束时给出完成内容、关键文件、实际验证结果和未完成项。
+如创建了临时服务、监听器或验证文件，完成后清理自己创建的资源，不停止用户已有进程。
+
+## 4. 按任务查找代码
+
+下表以前后端 pr-chat 为参考；处理 pr-admin / pr-sso / pr-auth 时，读取对应应用的同层文件。
+
+| 任务 | 优先读取 |
+| --- | --- |
+| 页面与路由 | [App.tsx](frontend/pr-chat/src/App.tsx)、[pages](frontend/pr-chat/src/pages/)、[AppLayout.tsx](frontend/pr-chat/src/components/AppLayout.tsx) |
+| 品牌与样式 | [project.ts](frontend/pr-chat/src/project.ts)、[index.css](frontend/pr-chat/src/styles/index.css) |
+| 请求状态、取消与错误 | [useHealth.ts](frontend/pr-chat/src/hooks/useHealth.ts)、[api/client.ts](frontend/pr-chat/src/api/client.ts) |
+| 新增或调整 API | [共享契约](backend/contracts/src/contract.ts)、[服务契约入口](backend/pr-chat/src/api/index.ts)、对应 routes/controllers/services |
+| 后端响应与错误 | [health.controller.ts](backend/pr-chat/src/controllers/health.controller.ts)、[error-handler.ts](backend/pr-chat/src/middlewares/error-handler.ts)、[AppError](backend/pr-chat/src/utils/app-error.ts) |
+| Gateway 转发 | [app.ts](backend/gateway/src/app.ts)、[register-proxies.ts](backend/gateway/src/proxy/register-proxies.ts)、[proxy-error.ts](backend/gateway/src/proxy/proxy-error.ts) |
+| 环境与开发代理 | 对应应用 `.env.example`、[Gateway 配置](backend/gateway/src/config/env.ts)、对应前端 `vite.config.ts` |
+| 接口生成与监听 | [api-projects.ts](scripts/api-projects.ts)、[generate-api.ts](scripts/generate-api.ts)、[watch-api.ts](scripts/watch-api.ts) |
+| lint 与编译边界 | [lint-files.mjs](scripts/lint-files.mjs)、[eslint.config.mjs](eslint.config.mjs)、[tsconfig.base.json](tsconfig.base.json)、目标包 tsconfig |
+
+先读取最相关的入口及其直接依赖；不要为了局部修改通读所有应用或生成文件。
+
+## 5. 前端开发约定
+
+- 使用 TypeScript 函数组件；页面放 `src/pages/`，复用组件放 `src/components/`，请求状态逻辑放 `src/hooks/`。
+- 沿用 PascalCase 组件文件、`useXxx` Hook 和当前路由组织方式；新增页面同时检查 App.tsx 与需要的导航。
+- 品牌配置集中在各自 `src/project.ts`；沿用现有布局、Tailwind CSS 和样式类。
+- 已声明的业务接口使用生成 SDK，显式传入 `apiClient`；通过 `requestApi` 处理超时和错误，通过 `unwrapResponse` 取业务数据。
+- 不在页面中重复实现通用 fetch 包装、拼接服务命名空间或硬编码下游端口。
+- 使用 ahooks 管理异步请求；按实际交互覆盖加载、错误、空数据、成功与刷新状态。
+- 请求替换、手动刷新和组件卸载时，沿用现有 AbortController 取消模式，避免旧响应覆盖新状态。
+- 保留语义元素、键盘焦点、必要的 aria 提示、窄屏布局与减少动画偏好。
+- 三个前端独立运行；当前没有共享 UI 包，不直接导入另一前端的源码。
+- 新增 UI、状态管理或请求库属于依赖变更，先说明现有能力为何不足并纳入方案。
+
+现有客户端调用形式如下；在对应 Hook 的取消与异常处理流程中使用：
+
+```ts
+const payload = await requestApi(
+  (signal) => getChatHealth({ client: apiClient, throwOnError: true, signal }),
+  active.signal,
+);
+return unwrapResponse(payload);
+```
+
+`active` 来自当前请求的 AbortController，完整生命周期参考 useHealth.ts。
+
+## 6. 后端、接口契约与生成
+
+### 新增或调整接口的顺序
+
+1. 先确定所属服务、输入输出、业务规则、消费者、公开性与验收；按第 3 节确认方案。
+2. 在 `backend/contracts/src/contract.ts` 定义或修改 Zod Schema 和操作。
+3. 在目标后端实现 routes、controllers、services，复用本地 `src/api/index.ts` 导出的契约。
+4. 执行 `pnpm generate:api`，检查 OpenAPI 与各消费者 SDK 是否按预期更新。
+5. 前端调用生成函数，补齐状态处理；完成受影响文件检查和实际请求验证。
+
+### 契约规则
+
+- 操作声明全局唯一 operationId、method、相对 path、exposure、clients、请求及响应定义。
+- 完整路径为 `/api + namespace + operation.path`；使用 `fullPath` / `expressPath` 派生路由，不重复拼接 `/api` 或服务前缀。
+- 路径参数采用 `/items/{id}` 形式，由 `expressPath` 转成 Express 路径；这是格式示例，不表示已有 items 接口。
+- `exposure: 'public'` 允许接口经 Gateway 暴露；`internal` 接口的 clients 必须为空。
+- **exposure 和 clients 不提供身份授权。** clients 只筛选 SDK 消费者；需要登录或权限的接口必须先确定并实现认证授权方案。
+- 下游 OpenAPI 包含自身操作；Gateway OpenAPI 汇总公开操作；每个前端 SDK 仅包含分配给它的公开操作。
+- 生成器不实现业务逻辑，不注册新的下游控制器，也不替代运行时输入校验。
+
+### 后端实现规则
+
+- routes 负责方法、路径与处理器挂载；controllers 处理 HTTP 输入输出；services 承载业务逻辑。
+- 输入校验和响应输出校验使用契约 Schema，避免再维护一份不一致的类型或接口定义。
+- 新增输入校验时明确失败状态和错误码；不要把输出校验失败或所有 Zod 错误一律映射为客户端 400。
+- 沿用成功响应 `{ success: true, data }` 和错误响应 `{ success: false, error: { code, message } }`。
+- 复用 `AppError`、公共错误 Schema 和统一 errorHandler；新增错误码同步修改集中契约。
+- 保留现有 JSON 100kb 限制、非法 JSON 400、超限 413 和未知路由 404，除非方案明确调整。
+- 后端通过 `@my-sp-pr/contracts` 使用编译产物；共享契约仅依赖基础 Schema 能力，不导入应用业务。
+- 不跨服务导入源码，也不扩大某个后端 rootDir 来容纳其他包；各服务输出保留在自己的 dist。
+- 使用 NodeNext 兼容的 `.js` 相对模块引用；类型用 `import type`，遵守现有严格编译选项。
+
+### 生成文件边界
+
+以下均由工具维护：`backend/contracts/dist/`、各后端 `generated/openapi.json`、各前端 `src/api/generated/`。
+API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`；生成逻辑变化修改 `scripts/generate-api.ts`。
+前端只使用生成 SDK，不直接导入后端源码。
+生成失败先修复源契约或生成器，保留上次成功产物，不手改生成文件来绕过报错。
+源码契约、OpenAPI 和 SDK 的变化应一起交付；dist 是可重建产物。
+监听器监控集中契约，成功生成后四个后端监听编译后的契约 JS 并重启；不要依赖旧产物判断修改已生效。
+
+## 7. Gateway 与环境约定
+
+- Gateway 只转发契约声明的公开 method/完整路径，使用已配置的固定上游，不接受客户端指定转发目标。
+- 保持完整路径、query、编码和原始请求体；不要添加路径重写或任意服务前缀通配代理。
+- 代理前不全局执行 JSON 解析，不缓存完整响应，不擅自添加重试或自动跟随重定向。
+- 保留正常上游状态、响应头与响应体；连接失败返回 502，超时返回 504。
+- 保持客户端取消时终止上游、部分响应失败时关闭连接的行为，不在已开始的响应后追加错误 JSON。
+- 当前普通请求的默认总代理期限为 8 秒，前端超时为 10 秒；SSE/WebSocket 需要另行设计。
+- Gateway 生成并覆盖 X-Request-Id，下游复用；保留外部身份头清理，不把请求追踪字段当作身份。
+- 访问日志不包含凭证、完整请求体或 query；修改日志内容时仍须保留已有 console.log。
+- 仅 Gateway 管理浏览器 CORS；下游默认绑定 127.0.0.1。CORS 不替代身份鉴权或网络隔离。
+- Gateway 生产环境显式配置三个上游 Origin 和前端 CORS_ORIGINS；当前未启用 Cookie 跨域凭据。
+- 后端读取各自应用目录的 `.env`，进程环境变量优先；新增配置同步维护 `.env.example`。
+- 不提交实际 `.env` 或凭证；`VITE_*` 会进入浏览器构建产物，不能包含密钥。
+- 调整内部服务端口时同步 Gateway 对应上游配置，前端继续使用统一入口。
+- 业务逻辑归属对应服务；Gateway 不承载聊天、管理或身份服务的持久化和业务实现。
+
+详细配置和生产部署步骤见 [README](README.md)。
+
+## 8. 常用命令
+
+以下命令均从项目根目录执行。根据任务选择，不需要每次全部运行。
+首次准备环境按 README 安装依赖；不要为无依赖变化的任务反复安装。
+
+| 目的 | 命令 |
+| --- | --- |
+| 启动七个应用和契约监听器 | `pnpm dev` |
+| 只启动前端组 / 后端组及监听 | `pnpm dev:frontend` / `pnpm dev:backend` |
+| 编译契约并生成文档、SDK | `pnpm generate:api` |
+| 监听契约并生成 | `pnpm watch:api` |
+| 客户端类型检查 | `pnpm --filter @my-sp-pr/pr-chat-web typecheck` |
+| 客户端服务类型检查 | `pnpm --filter @my-sp-pr/pr-chat-api typecheck` |
+| 生成并检查八个包和工具脚本 | `pnpm typecheck` |
+| 生成、类型检查及完整构建 | `pnpm build` |
+| 运行已构建后端 / 预览前端 | `pnpm start:backend` / `pnpm preview:frontend` |
+
+独立开发某个前端仍需 Gateway 和对应后端；以下为 pr-chat 示例，各 dev 命令在单独终端运行：
+
+```sh
+pnpm generate:api
+pnpm --filter @my-sp-pr/gateway dev
+pnpm --filter @my-sp-pr/pr-chat-api dev
+pnpm --filter @my-sp-pr/pr-chat-web dev
+```
+
+编辑契约时另开终端运行 `pnpm watch:api`；根 `pnpm dev` 已包含监听，不要重复启动。
+单包检查或构建前确认契约产物存在且最新；单个前端的 build 只运行 Vite，不能代替 typecheck。
+
+### Lint 范围
+
+执行前列出本次实际修改或新增的手写 JS/MJS/TS/TSX 文件，每个路径作为独立参数。
+以下命令仅在列出的两个文件都属于本次变更时使用；实际任务应替换为真实变更路径：
+
+```sh
+pnpm lint -- backend/contracts/src/contract.ts frontend/pr-chat/src/hooks/useHealth.ts
+```
+
+禁止把目录、glob、未修改文件或整个项目传给 lint；禁止全项目 format/fix，不传 `--fix`。
+不对自动生成文件或纯 Markdown 执行代码 lint；生成代码通过类型检查和构建验证。
+lint 入口拒绝空参数及选项，具体规则见 `scripts/lint-files.mjs`。
+
+## 9. 按变更选择验证
+
+| 变更类型 | 验证范围 |
+| --- | --- |
+| 纯文档 | 核对路径、链接、命令与事实，无需代码 lint、类型检查或构建 |
+| 单前端局部改动 | 变更文件 lint、对应包类型检查；交互变化验证相关页面、状态和窄屏 |
+| 单后端局部改动 | 变更文件 lint、对应包类型检查、受影响 HTTP 请求和错误分支 |
+| 契约或跨服务改动 | 生成产物、受影响手写文件 lint、跨包类型检查/构建、经 Gateway 的端到端请求 |
+| Gateway 代理改动 | 上述相关检查，加上受影响的未知路由、上游故障、超时、流式和取消场景 |
+
+- 当前没有测试脚本或已配置测试框架，不编造 `pnpm test`，不把构建通过表述为测试全部通过。
+- 为复杂行为选择有实际价值的验证；不要为低影响文案修改新增测试框架。
+- 依赖新增先纳入方案；已有手段可验证时优先复用。
+- 检查成功后，只有出现新修改、失败或未解决风险才扩大或重复验证。
+- 浏览器 API 请求应经 Gateway；健康状态显示实际服务，不使用固定成功文案替代请求结果。
+- 测试新增接口时覆盖其批准的成功与失败标准；临时验证数据不混入正式业务接口。
+
+## 10. 可复制的任务模板
+
+尖括号内容由使用者填写，不代表当前已存在的功能或文件。
+
+### 局部修复
+
+```text
+先阅读根目录 AGENTS.md。
+目标项目：<例如 frontend/pr-chat>
+现象与复现：<步骤、错误信息、截图或相关日志>
+期望行为：<修复后可观察到的结果>
+已知约束：<需要保留的行为；没有则写“沿用项目规则”>
+验收：<如何确认问题已经解决>
+若属于明确的局部修复，请直接实现并验证；若需扩大到契约、
+跨服务或依赖调整，请先说明影响并给出方案。
+```
+
+### 新功能
+
+```text
+先阅读根目录 AGENTS.md，先规划，确认后实施。
+目标用户与场景：<谁在什么情况下使用>
+功能目标：<用户可以完成什么>
+涉及项目：<前端与后端；不确定时请根据代码提出建议>
+业务规则：<权限、输入、状态变化、边界条件>
+接口与数据：<已有接口、所需数据、是否需要持久化>
+本次范围外：<明确暂不实现的部分>
+验收：<成功、失败、加载及空状态的期望>
+请先核对现有实现，列出待决策项、变更文件和验证方案。
+```
+
+### 跨服务或 API 调整
+
+```text
+先阅读根目录 AGENTS.md，先规划，确认后实施。
+涉及服务与前端：<项目列表>
+现有行为：<调用链、接口和响应>
+目标行为：<具体变化>
+兼容要求：<是否保留旧行为、已有调用方如何迁移>
+公开性与消费者：<哪些接口经网关暴露、哪些前端需要 SDK>
+身份与权限要求：<现有能力或需要另行确定的方案>
+失败场景：<超时、不可用、非法输入等>
+验收：<可执行的检查方法>
+请说明契约、各服务、Gateway 和 SDK 的影响，避免遗漏调用方。
+```
+
+## 11. 文档维护
+
+本文件记录当前有效约定，不替代用户后续批准的架构决策。
+包名、端口、服务边界、契约流程或开发命令发生已批准变化时，同步更新本文件和对应 README 内容。
+临时调试记录、一次性计划和逐次任务日志不要追加进长期规则。
+参考入口：[README](README.md)、[共享契约](backend/contracts/src/contract.ts)、[根命令](package.json)。

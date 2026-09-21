@@ -1,0 +1,16 @@
+{
+  "name": "@my-sp-pr/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24 <25" },
+  "types": "./dist/contract.d.ts",
+  "exports": { ".": { "types": "./dist/contract.d.ts", "import": "./dist/contract.js" } },
+  "files": ["dist"],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": { "zod": "4.6.5" },
+  "devDependencies": { "typescript": "~5.9.3" }
+}
