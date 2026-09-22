@@ -151,7 +151,7 @@ function documentFor(selected: typeof entries, title: string, publicView: boolea
     info: {
       title,
       version: '0.1.0',
-      description: '自动生成，请修改 backend/contracts/src/contract.ts 后运行 pnpm generate:api。',
+      description: '自动生成，请修改 backend/contracts/src/ 下对应服务的 *.contract.ts 或 shared.ts 后运行 pnpm generate:api。',
     },
     servers: [{ url: API_PREFIX }],
   });

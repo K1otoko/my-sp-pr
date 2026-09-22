@@ -1,6 +1,7 @@
 import { loadEnvFile } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { parseDatabaseConfig } from '@my-sp-pr/database';
 
 // 开发 src/config 与生产 dist/config 的相对层级一致，不依赖启动目录。
 try {
@@ -23,4 +24,5 @@ export const env = {
   nodeEnv: parsed.data.NODE_ENV,
   host: parsed.data.HOST,
   port: parsed.data.PORT,
+  database: parseDatabaseConfig(process.env, 'runtime'),
 };

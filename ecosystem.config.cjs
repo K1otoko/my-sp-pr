@@ -9,6 +9,7 @@ const backend = (name, dir) => ({
   autorestart: true,
   max_restarts: 10,
   max_memory_restart: '300M',
+  kill_timeout: 12000,
   env: { NODE_ENV: 'production' },
 });
 

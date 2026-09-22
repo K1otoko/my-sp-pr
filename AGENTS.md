@@ -10,7 +10,7 @@
 2. 小范围修复可直接完成；新功能、跨服务改动、共享契约修改或新增依赖先给方案，用户确认后实施。
 3. 已批准范围内的实现、接口生成和必要验证不重复请求确认。用户明确要求只规划时保持只读。
 4. 所有前端业务 API 经 Gateway；不在前端直连内部服务或重复声明服务地址。
-5. 接口定义集中在 `backend/contracts/src/contract.ts`；SDK、OpenAPI 和 dist 由工具生成，禁止直接手改。
+5. 接口定义集中在 `backend/contracts/src/` 的对应 `*.contract.ts` 和 `shared.ts`，`contract.ts` 仅聚合；SDK、OpenAPI 和 dist 由工具生成，禁止直接手改。
 6. **只对本次实际修改或新增的手写代码文件执行显式路径 lint，禁止全项目 lint、format 或 fix。**
 7. **禁止移除已有 console.log。** 不以格式化、重构或清理日志为由删除。
 8. 沿用现有技术栈和包边界；不通过跨应用源码导入、扩大 rootDir 或关闭类型检查绕过问题。
@@ -22,9 +22,9 @@
 
 ## 2. 当前项目与请求链路
 
-这是一个 pnpm workspace：三个前端、四个后端、一个内部契约包。
-目前提供可运行骨架、真实健康检查、Gateway HTTP 转发、OpenAPI 与 SDK 生成。
-账号、登录、会话、权限、聊天和管理业务尚未实现，也未接入数据库或持久化。
+这是一个 pnpm workspace：三个前端、四个后端、一个内部契约包、一个数据库技术包。
+目前提供可运行骨架、真实健康与数据库就绪检查、Gateway HTTP 转发、OpenAPI 与 SDK 生成，以及 PostgreSQL 18 + Drizzle 基础设施。
+账号、登录、会话、权限、聊天和管理业务及业务表尚未实现。
 
 技术栈：Node.js 24、pnpm 10.25.0、TypeScript strict；前端使用 React 19、Vite 8、React Router 7、Tailwind CSS 4、ahooks；后端使用 Express 5、Zod 4。
 具体依赖版本以各 package.json 和锁文件为准，不在无关任务中升级。
@@ -39,6 +39,7 @@
 | `backend/pr-auth` | `@my-sp-pr/pr-auth-api` | 身份服务骨架 | 3002 | — |
 | `backend/pr-admin` | `@my-sp-pr/pr-admin-api` | 管理服务骨架 | 3003 | — |
 | `backend/contracts` | `@my-sp-pr/contracts` | 共享契约库 | 不监听 | — |
+| `backend/database` | `@my-sp-pr/database` | PG 配置、Pool、Drizzle、迁移工具 | 不监听 | — |
 
 请求链路：页面 → Hook → 生成 SDK / apiClient → Gateway → 对应后端服务。
 开发时 Vite 将同源 `/api` 原样代理到 `http://127.0.0.1:3000`；生产由三个前端统一配置网关 API 地址。
@@ -51,6 +52,7 @@
 | `/api/auth/health` | pr-auth | `getAuthHealth` |
 
 Gateway 自身健康不代表所有下游健康。排查某个前端时检查它对应的下游路径。
+原 health 只表示存活；内部 `/api/auth/ready`、`/api/chat/ready`、`/api/admin/ready` 真实检查数据库，失败返回 503，恢复后可重新就绪。Gateway 对 ready 返回 404，不生成前端 SDK。
 
 ## 3. 协作节奏
 
@@ -87,6 +89,8 @@ Gateway 自身健康不代表所有下游健康。排查某个前端时检查它
 | 环境与开发代理 | 对应应用 `.env.example`、[Gateway 配置](backend/gateway/src/config/env.ts)、对应前端 `vite.config.ts` |
 | 接口生成与监听 | [api-projects.ts](scripts/api-projects.ts)、[generate-api.ts](scripts/generate-api.ts)、[watch-api.ts](scripts/watch-api.ts) |
 | lint 与编译边界 | [lint-files.mjs](scripts/lint-files.mjs)、[eslint.config.mjs](eslint.config.mjs)、[tsconfig.base.json](tsconfig.base.json)、目标包 tsconfig |
+| 数据库配置与连接 | [database/config.ts](backend/database/src/config.ts)、[client.ts](backend/database/src/client.ts)、目标服务 `src/db/index.ts` |
+| 表结构与迁移 | 目标服务 `src/db/schema/`、`drizzle.config.ts`、`drizzle/`、[迁移执行器](backend/database/src/migrate.ts) |
 
 先读取最相关的入口及其直接依赖；不要为了局部修改通读所有应用或生成文件。
 
@@ -120,7 +124,7 @@ return unwrapResponse(payload);
 ### 新增或调整接口的顺序
 
 1. 先确定所属服务、输入输出、业务规则、消费者、公开性与验收；按第 3 节确认方案。
-2. 在 `backend/contracts/src/contract.ts` 定义或修改 Zod Schema 和操作。
+2. 在 `backend/contracts/src/` 对应服务的 `*.contract.ts` 和共享 `shared.ts` 定义或修改 Schema 和操作；`contract.ts` 仅聚合。
 3. 在目标后端实现 routes、controllers、services，复用本地 `src/api/index.ts` 导出的契约。
 4. 执行 `pnpm generate:api`，检查 OpenAPI 与各消费者 SDK 是否按预期更新。
 5. 前端调用生成函数，补齐状态处理；完成受影响文件检查和实际请求验证。
@@ -154,7 +158,20 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 前端只使用生成 SDK，不直接导入后端源码。
 生成失败先修复源契约或生成器，保留上次成功产物，不手改生成文件来绕过报错。
 源码契约、OpenAPI 和 SDK 的变化应一起交付；dist 是可重建产物。
-监听器监控集中契约，成功生成后四个后端监听编译后的契约 JS 并重启；不要依赖旧产物判断修改已生效。
+监听器监控 `contracts/src/` 下全部 TS 新增、修改和删除；四个后端监听 `contracts/dist/**/*.js`，三个业务后端另监听 `database/dist/**/*.js`。不要依赖旧产物判断修改已生效。
+
+### 数据库边界
+
+- 使用 PG18 + Drizzle/node-postgres，三个服务分别持有独立 Pool；Gateway、前端和契约包不依赖 database 包。
+- 同库 auth/chat/admin Schema，运行角色固定为 `my_sp_pr_<域>_app`，迁移角色为 `my_sp_pr_<域>_migrator`；迁移记录在 `<域>_migrations.__drizzle_migrations`。
+- 业务表归服务自身 `src/db/schema/`，显式使用 pgSchema。不跨服务导入表、跨 Schema 联表或加外键，不把 ORM 类型导入 HTTP 契约。
+- app 仅有自身业务 DML，无 DDL/迁移历史权限；迁移角色拥有自身 Schema 和数据库 CREATE，凭据仅用于部署命令。HTTP 服务不得使用管理员或迁移账号。
+- 数据库包不默认读取 .env、不注册信号、不自动连接/迁移；服务加载配置并创建实例。数据库包也必须通过编译产物导入。
+- 新增表或数据库依赖先按协作规则确认。使用 Kit 生成 SQL/journal/snapshot；自定义授权 SQL 先用 `--custom` 生成容器。已执行迁移不可修改，追加修复迁移；不用 push/reset。
+- 迁移显式执行，独占 Client 持有服务 advisory lock；不在 dev/watch/build/启动/健康检查中迁移。根串行迁移不是跨服务总事务。
+- 首次数据库检查失败不监听 HTTP；运行中故障只使 ready 返回 503；退出先 HTTP 后 Pool，共用 10 秒期限，PM2 kill_timeout 12 秒。
+- Neon 事务池地址转换为同端点直连，运行由应用 Pool 管理；TLS 校验证书与主机。URL 参数及 channel binding 支持范围以 README 为准。
+- 配置报错和运行日志不得输出连接串、密码、完整 SQL 参数或驱动嵌套错误。环境文件和验证凭据不提交 Git。
 
 ## 7. Gateway 与环境约定
 
@@ -182,13 +199,17 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 
 | 目的 | 命令 |
 | --- | --- |
-| 启动七个应用和契约监听器 | `pnpm dev` |
+| 启动七个应用、契约监听及数据库编译监听 | `pnpm dev` |
 | 只启动前端组 / 后端组及监听 | `pnpm dev:frontend` / `pnpm dev:backend` |
 | 编译契约并生成文档、SDK | `pnpm generate:api` |
 | 监听契约并生成 | `pnpm watch:api` |
 | 客户端类型检查 | `pnpm --filter @my-sp-pr/pr-chat-web typecheck` |
 | 客户端服务类型检查 | `pnpm --filter @my-sp-pr/pr-chat-api typecheck` |
-| 生成并检查八个包和工具脚本 | `pnpm typecheck` |
+| 编译数据库包 | `pnpm build:database` |
+| 首次空库初始化 / 显式串行迁移 | `pnpm db:bootstrap` / `pnpm db:migrate` |
+| 单服务离线生成 / 元数据检查 | `pnpm --filter @my-sp-pr/pr-chat-api db:generate` / `db:check` |
+| 真实 PG18 临时库验证 | `pnpm verify:database` |
+| 生成并检查九个包和工具脚本 | `pnpm typecheck` |
 | 生成、类型检查及完整构建 | `pnpm build` |
 | 运行已构建后端 / 预览前端 | `pnpm start:backend` / `pnpm preview:frontend` |
 
@@ -196,13 +217,14 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 
 ```sh
 pnpm generate:api
+pnpm build:database
 pnpm --filter @my-sp-pr/gateway dev
 pnpm --filter @my-sp-pr/pr-chat-api dev
 pnpm --filter @my-sp-pr/pr-chat-web dev
 ```
 
 编辑契约时另开终端运行 `pnpm watch:api`；根 `pnpm dev` 已包含监听，不要重复启动。
-单包检查或构建前确认契约产物存在且最新；单个前端的 build 只运行 Vite，不能代替 typecheck。
+单包检查或构建前确认契约及数据库产物存在且最新；业务后端运行前必须配置 DATABASE_URL 并显式迁移。单个前端的 build 只运行 Vite，不能代替 typecheck。
 
 ### Lint 范围
 
@@ -227,12 +249,13 @@ lint 入口拒绝空参数及选项，具体规则见 `scripts/lint-files.mjs`�
 | 契约或跨服务改动 | 生成产物、受影响手写文件 lint、跨包类型检查/构建、经 Gateway 的端到端请求 |
 | Gateway 代理改动 | 上述相关检查，加上受影响的未知路由、上游故障、超时、流式和取消场景 |
 
-- 当前没有测试脚本或已配置测试框架，不编造 `pnpm test`，不把构建通过表述为测试全部通过。
+- 当前没有通用测试框架或 `pnpm test`；数据库集成验证使用显式 `pnpm verify:database`。不把构建通过表述为测试全部通过。
 - 为复杂行为选择有实际价值的验证；不要为低影响文案修改新增测试框架。
 - 依赖新增先纳入方案；已有手段可验证时优先复用。
 - 检查成功后，只有出现新修改、失败或未解决风险才扩大或重复验证。
 - 浏览器 API 请求应经 Gateway；健康状态显示实际服务，不使用固定成功文案替代请求结果。
 - 测试新增接口时覆盖其批准的成功与失败标准；临时验证数据不混入正式业务接口。
+- 数据库故障/权限/回滚验证仅在本轮新建的 `my_sp_pr_verify_*` 库执行，最终清理自己的连接、进程和临时库；不停止用户数据库或终止其他业务连接。
 
 ## 10. 可复制的任务模板
 

@@ -10,6 +10,7 @@ export const errorCodeSchema = z.enum([
   'INTERNAL_ERROR',
   'UPSTREAM_UNAVAILABLE',
   'UPSTREAM_TIMEOUT',
+  'DATABASE_NOT_READY',
 ]).meta({ id: 'ErrorCode' });
 
 export const errorResponseSchema = z.object({
@@ -36,6 +37,19 @@ export type ErrorCode = z.infer<typeof errorCodeSchema>;
 export type ErrorResponse = z.infer<typeof errorResponseSchema>;
 export type HealthData = z.infer<typeof healthDataSchema>;
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
+
+export const readinessDataSchema = z.object({
+  status: z.literal('ready'),
+  service: z.string(),
+  timestamp: z.iso.datetime(),
+  checks: z.object({ database: z.literal('ok') }),
+}).meta({ id: 'ReadinessData' });
+export const readinessResponseSchema = z.object({
+  success: z.literal(true),
+  data: readinessDataSchema,
+}).meta({ id: 'ReadinessResponse' });
+export type ReadinessData = z.infer<typeof readinessDataSchema>;
+export type ReadinessResponse = z.infer<typeof readinessResponseSchema>;
 
 export const clientIds = ['pr-chat', 'pr-admin', 'pr-sso'] as const;
 export type ClientId = typeof clientIds[number];
@@ -65,6 +79,25 @@ export function healthOperation(operationId: string, clients: readonly ClientId[
       },
       400: errorResponse('JSON 格式错误'),
       413: errorResponse('请求体超过限制'),
+      500: errorResponse('服务内部错误'),
+    },
+  } as const;
+}
+
+export function readinessOperation(operationId: string) {
+  return {
+    operationId,
+    method: 'get',
+    path: '/ready',
+    summary: '查询服务与数据库就绪状态',
+    exposure: 'internal',
+    clients: [],
+    responses: {
+      200: {
+        description: '服务就绪',
+        content: { 'application/json': { schema: readinessResponseSchema } },
+      },
+      503: errorResponse('服务尚未就绪'),
       500: errorResponse('服务内部错误'),
     },
   } as const;

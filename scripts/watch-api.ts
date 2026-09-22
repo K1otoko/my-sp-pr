@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import chokidar from 'chokidar';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const contract = fileURLToPath(new URL('../backend/contracts/src/contract.ts', import.meta.url));
+const contract = fileURLToPath(new URL('../backend/contracts/src/', import.meta.url));
 const generator = fileURLToPath(new URL('./generate-api.ts', import.meta.url));
 let child: ChildProcess | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -38,9 +38,11 @@ function schedule() {
   timer = setTimeout(generate, 200);
 }
 
-watcher.on('all', schedule);
+watcher.on('all', (event, file) => {
+  if (['add', 'change', 'unlink'].includes(event) && file.endsWith('.ts')) schedule();
+});
 watcher.on('ready', () => {
-  console.log('[api:watch] 正在监听 backend/contracts/src/contract.ts');
+  console.log('[api:watch] 正在监听 backend/contracts/src/ 下全部 TypeScript 契约');
   if (!process.argv.includes('--skip-initial')) schedule();
 });
 watcher.on('error', (error) => {

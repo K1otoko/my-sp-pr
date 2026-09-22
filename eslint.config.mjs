@@ -19,6 +19,11 @@ export default defineConfig([
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   },
   {
+    files: ['ecosystem.config.cjs'],
+    extends: [js.configs.recommended],
+    languageOptions: { sourceType: 'commonjs', globals: globals.node },
+  },
+  {
     files: ['backend/**/*.ts', 'scripts/*.{ts,mjs}', '*.mjs', 'frontend/*/vite.config.ts'],
     languageOptions: { globals: globals.node },
   },

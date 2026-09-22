@@ -30,7 +30,7 @@ export type ErrorResponse = {
     };
 };
 
-export type ErrorCode = 'NOT_FOUND' | 'CORS_FORBIDDEN' | 'INVALID_JSON' | 'PAYLOAD_TOO_LARGE' | 'INTERNAL_ERROR' | 'UPSTREAM_UNAVAILABLE' | 'UPSTREAM_TIMEOUT';
+export type ErrorCode = 'NOT_FOUND' | 'CORS_FORBIDDEN' | 'INVALID_JSON' | 'PAYLOAD_TOO_LARGE' | 'INTERNAL_ERROR' | 'UPSTREAM_UNAVAILABLE' | 'UPSTREAM_TIMEOUT' | 'DATABASE_NOT_READY';
 
 export type GetGatewayHealthData = {
     body?: never;

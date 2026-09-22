@@ -6,5 +6,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["scripts/**/*.ts", "backend/*/drizzle.config.ts", "backend/database/scripts/**/*.ts"]
 }

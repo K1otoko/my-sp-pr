@@ -3,7 +3,7 @@
   "info": {
     "title": "PR Chat API",
     "version": "0.1.0",
-    "description": "自动生成，请修改 backend/contracts/src/contract.ts 后运行 pnpm generate:api。"
+    "description": "自动生成，请修改 backend/contracts/src/ 下对应服务的 *.contract.ts 或 shared.ts 后运行 pnpm generate:api。"
   },
   "servers": [
     {
@@ -99,7 +99,64 @@
           "PAYLOAD_TOO_LARGE",
           "INTERNAL_ERROR",
           "UPSTREAM_UNAVAILABLE",
-          "UPSTREAM_TIMEOUT"
+          "UPSTREAM_TIMEOUT",
+          "DATABASE_NOT_READY"
+        ]
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReadinessData"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ]
+      },
+      "ReadinessData": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready"
+            ]
+          },
+          "service": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checks": {
+            "type": "object",
+            "properties": {
+              "database": {
+                "type": "string",
+                "enum": [
+                  "ok"
+                ]
+              }
+            },
+            "required": [
+              "database"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "timestamp",
+          "checks"
         ]
       }
     },
@@ -143,6 +200,44 @@
           },
           "500": {
             "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/ready": {
+      "get": {
+        "operationId": "getChatReadiness",
+        "summary": "查询服务与数据库就绪状态",
+        "responses": {
+          "200": {
+            "description": "服务就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "服务尚未就绪",
             "content": {
               "application/json": {
                 "schema": {
