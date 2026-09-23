@@ -33,6 +33,7 @@ async function sha256(filename) {
 }
 
 async function validateTree(directory, relative = '') {
+  const files = [];
   for (const entry of await readdir(path.join(directory, relative), { withFileTypes: true })) {
     const name = path.join(relative, entry.name);
     const details = await lstat(path.join(directory, name));
@@ -41,9 +42,12 @@ async function validateTree(directory, relative = '') {
       if (target !== directory && !target.startsWith(`${directory}${path.sep}`)) {
         throw new Error(`制品符号链接越界：${name}`);
       }
-    } else if (details.isDirectory()) await validateTree(directory, name);
+      files.push(name);
+    } else if (details.isDirectory()) files.push(...await validateTree(directory, name));
     else if (!details.isFile()) throw new Error(`制品包含不支持的文件类型：${name}`);
+    else files.push(name);
   }
+  return files;
 }
 
 async function atomicLink(target, link) {
@@ -94,7 +98,7 @@ for (const entry of listing.split('\n').filter(Boolean)) {
 await rm(artifact, { recursive: true, force: true });
 await mkdir(artifact, { recursive: true, mode: 0o750 });
 await execute('tar', ['-xzf', archive, '-C', artifact]);
-await validateTree(artifact);
+const artifactFiles = await validateTree(artifact);
 await validateTree(control);
 const release = JSON.parse(await readFile(path.join(artifact, 'release.json'), 'utf8'));
 if (release.schemaVersion !== 1 || !/^[a-z][a-z0-9-]{1,63}$/u.test(release.unitId)
@@ -105,6 +109,12 @@ if (!environment || !/^[a-z][a-z0-9-]{1,63}$/u.test(environment)) throw new Erro
 if (process.env.DEPLOY_UNIT_ID !== release.unitId) throw new Error('制品 unit 与 deployment 不匹配');
 
 const checksums = JSON.parse(await readFile(path.join(artifact, 'checksums.json'), 'utf8'));
+const expectedFiles = Object.keys(checksums).sort();
+const actualFiles = artifactFiles.filter((name) => name !== 'checksums.json').sort();
+if (expectedFiles.length !== actualFiles.length
+  || expectedFiles.some((name, index) => name !== actualFiles[index])) {
+  throw new Error('制品文件清单与摘要不一致');
+}
 for (const [name, expected] of Object.entries(checksums)) {
   if (typeof expected !== 'string' || path.isAbsolute(name) || name.split(path.sep).includes('..')
     || await sha256(path.join(artifact, name)) !== expected) throw new Error(`制品摘要校验失败：${name}`);
