@@ -213,7 +213,7 @@ Gateway `/api/health` 只表示网关自身可响应。停止某个下游时，�
 
 - 只按契约的公开 method/完整路径转发；不做路径重写，保留 query、编码、请求体、下游状态、响应头与响应体。GET 可接受标准 HEAD 请求，其他未声明方法或路径返回统一 404。
 - 代理前不全局读取 JSON，不缓冲整段响应，不自动重试或跟随重定向。下游负责 JSON 100kb 限制。
-- 普通请求默认总代理期限 8 秒，同时设置代理空闲超时；前端超时 10 秒。失败由用户点击重试，不无限重试。
+- 普通请求默认总代理期限 8 秒，同时设置代理空闲超时；SSO portal 回调默认 20 秒，以容纳服务端 token 交换和会话持久化。前端超时 10 秒。失败由用户点击重试，不无限重试。
 - 连接/DNS/上游断开返回 502；总代理期限到达返回 504。客户端断连时取消上游。已开始的响应发生故障时关闭连接，不追加 JSON。
 - 网关覆盖外部 `X-Request-Id`，生成 UUID 并传递给下游；响应暴露该头。下游复用合法 UUID，直连时可生成本地 ID。
 - 清除外部 `X-User-Id`、`X-Roles`、`X-Permissions`、Forwarded 和 X-Forwarded-*。Gateway 不产生登录身份；向 pr-auth 重建固定 issuer 的 Host/proto 和可信 IP。访问日志不记录凭证或 query。
@@ -242,6 +242,7 @@ Chat/Admin 的 `VITE_API_BASE_URL` 默认 `/api`，生产可设为 `https://api.
 | AUTH_SERVICE_URL | http://127.0.0.1:3002 | 不使用 |
 | ADMIN_SERVICE_URL | http://127.0.0.1:3003 | 不使用 |
 | UPSTREAM_TIMEOUT_MS | 8000（1–9999） | 不使用 |
+| AUTH_FLOW_TIMEOUT_MS | 20000（10000–60000，且大于普通上游期限） | 不使用 |
 | CORS_ORIGINS | http://localhost:5173,http://localhost:5174,http://localhost:5175 | 不使用 |
 | SSO_PUBLIC_ORIGIN | http://localhost:5175 | pr-auth 同值；生产必须 HTTPS |
 | TRUSTED_PROXY_CIDRS | 空，不信任外部代理头 | 不使用 |

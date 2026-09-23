@@ -12,6 +12,8 @@ import type { AuthStore } from '../repositories/auth-store.js';
 import { flowStore, type LoginFlow } from '../repositories/flow-store.js';
 import { AppError } from '../utils/app-error.js';
 
+const protocolRequestTimeoutMs = 7_500;
+
 export function portalClient(config: AuthConfig, store: AuthStore, provider: Provider) {
   const browser = browserSecurity(config);
   const flows = flowStore(store);
@@ -30,13 +32,13 @@ export function portalClient(config: AuthConfig, store: AuthStore, provider: Pro
     oidc.ClientSecretBasic(config.portalSecret));
     if (!config.secure) oidc.allowInsecureRequests(clientConfig);
     oidc.enableNonRepudiationChecks(clientConfig);
-    clientConfig.timeout = 5;
+    clientConfig.timeout = protocolRequestTimeoutMs / 1000;
     clientConfig[oidc.customFetch] = (url, options) => {
       const target = new URL(url);
       if (target.origin !== config.origin || ![oidcPaths.token, oidcPaths.userinfo, oidcPaths.jwks].some((path) => target.pathname === path)) {
         throw new AppError(503, 'AUTH_UNAVAILABLE', '身份服务配置不可用');
       }
-      const signals = [AbortSignal.timeout(5000)];
+      const signals = [AbortSignal.timeout(protocolRequestTimeoutMs)];
       if (signal) signals.push(signal);
       if (options?.signal) signals.push(options.signal);
       return fetch(target, { ...options, redirect: 'error', signal: AbortSignal.any(signals) });

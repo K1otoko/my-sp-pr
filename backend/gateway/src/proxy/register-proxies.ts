@@ -23,7 +23,7 @@ export function registerProxies(app: Express) {
     const proxy = createProxyMiddleware({
       target: upstreams[service.service],
       changeOrigin: true,
-      proxyTimeout: env.upstreamTimeoutMs,
+      proxyTimeout: service.service === 'pr-auth' ? env.authFlowTimeoutMs : env.upstreamTimeoutMs,
       // 使用自定义错误响应；保留代理事件和底层 error 监听。
       ejectPlugins: true,
       plugins: [debugProxyErrorsPlugin, proxyEventsPlugin],
@@ -69,8 +69,14 @@ export function registerProxies(app: Express) {
 
     const routes = (Object.values(service.apiContract) as Operation[])
       .filter((operation) => operation.exposure === 'public')
-      .map((operation) => ({ method: operation.method, path: fullPath(service, operation) }));
-    if (service.service === 'pr-auth') routes.push(...authProtocolRoutes.map(({ method, path }) => ({ method, path })));
+      .map((operation) => ({
+        method: operation.method,
+        path: fullPath(service, operation),
+        timeoutMs: operation.operationId === 'completeAuthPortal' ? env.authFlowTimeoutMs : env.upstreamTimeoutMs,
+      }));
+    if (service.service === 'pr-auth') {
+      routes.push(...authProtocolRoutes.map(({ method, path }) => ({ method, path, timeoutMs: env.upstreamTimeoutMs })));
+    }
     for (const operation of routes) {
       // 完整路径匹配，不挂载会截掉前缀的 Router，不修改 req.url 或 body。
       app[operation.method](expressPath(operation.path), (request, response, next) => {
@@ -106,7 +112,7 @@ export function registerProxies(app: Express) {
             destroyUpstream();
           },
         };
-        const timer = setTimeout(() => transfer.fail(true), env.upstreamTimeoutMs);
+        const timer = setTimeout(() => transfer.fail(true), operation.timeoutMs);
         timer.unref();
         transfers.set(request, transfer);
         request.once('aborted', transfer.cancel);

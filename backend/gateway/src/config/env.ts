@@ -30,7 +30,15 @@ const envSchema = z.object({
   AUTH_SERVICE_URL: originSchema.optional(),
   ADMIN_SERVICE_URL: originSchema.optional(),
   UPSTREAM_TIMEOUT_MS: z.coerce.number().int().min(1).max(9_999).default(8_000),
+  AUTH_FLOW_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(60_000).default(20_000),
 }).superRefine((value, context) => {
+  if (value.AUTH_FLOW_TIMEOUT_MS <= value.UPSTREAM_TIMEOUT_MS) {
+    context.addIssue({
+      code: 'custom',
+      path: ['AUTH_FLOW_TIMEOUT_MS'],
+      message: '必须大于 UPSTREAM_TIMEOUT_MS',
+    });
+  }
   if (value.NODE_ENV === 'production') {
     for (const key of ['CORS_ORIGINS', 'SSO_PUBLIC_ORIGIN', ...upstreamKeys] as const) {
       if (!value[key]?.trim()) context.addIssue({ code: 'custom', path: [key], message: '生产环境必须显式设置' });
@@ -70,4 +78,5 @@ export const env = {
   trustedProxyCidrs: config.TRUSTED_PROXY_CIDRS.split(',').map((value) => value.trim()).filter(Boolean),
   targets,
   upstreamTimeoutMs: config.UPSTREAM_TIMEOUT_MS,
+  authFlowTimeoutMs: config.AUTH_FLOW_TIMEOUT_MS,
 };
