@@ -32,6 +32,17 @@
     background: var(--app-surface);
   }
 
+  .app-sidebar.ant-layout-sider {
+    border-inline-end: 1px solid var(--app-border);
+    background: var(--app-surface);
+  }
+
+  .surface-panel {
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    background: var(--app-surface);
+  }
+
   .brand-link {
     color: var(--app-text);
   }

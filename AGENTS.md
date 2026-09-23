@@ -23,8 +23,8 @@
 ## 2. 当前项目与请求链路
 
 这是一个 pnpm workspace：三个前端、四个后端、一个内部契约包、一个数据库技术包。
-目前提供真实健康与数据库就绪检查、Gateway HTTP 转发、OpenAPI/SDK、PostgreSQL 18 + Drizzle，以及基于 oidc-provider 的 SSO 登录、中央会话和 admin/user 角色准入。
-Chat/Admin 尚未接入登录；注册、账号管理、设置、业务权限和聊天业务后续单独实现，不能将 SSO 能力表述为这些应用已完成鉴权。
+目前提供真实健康与数据库就绪检查、Gateway HTTP 转发、OpenAPI/SDK、PostgreSQL 18 + Drizzle，以及基于 oidc-provider 的 SSO 登录、中央会话和 super/admin/user 角色准入。
+Admin 已通过 OIDC BFF 接入登录，admin/super 可进入，只有 super 可访问发布模块；Chat 尚未接入登录。注册、账号管理、设置、聊天业务权限后续单独实现，不能将 SSO 或 Admin 发布权限表述为 Chat 已完成鉴权。
 
 技术栈：Node.js 24、pnpm 10.25.0、TypeScript strict；前端使用 React 19、Vite 8、React Router 7、Ant Design 6、Tailwind CSS 4、ahooks；后端使用 Express 5、Zod 4。
 具体依赖版本以各 package.json 和锁文件为准，不在无关任务中升级。
@@ -37,12 +37,12 @@ Chat/Admin 尚未接入登录；注册、账号管理、设置、业务权限和
 | `backend/gateway` | `@my-sp-pr/gateway` | 统一 API 入口 | 3000 | — |
 | `backend/pr-chat` | `@my-sp-pr/pr-chat-api` | 客户端业务服务 | 3001 | — |
 | `backend/pr-auth` | `@my-sp-pr/pr-auth-api` | OIDC 身份服务 | 3002 | — |
-| `backend/pr-admin` | `@my-sp-pr/pr-admin-api` | 管理服务骨架 | 3003 | — |
+| `backend/pr-admin` | `@my-sp-pr/pr-admin-api` | Admin BFF 与发布控制面 | 3003 | — |
 | `backend/contracts` | `@my-sp-pr/contracts` | 共享契约库 | 不监听 | — |
 | `backend/database` | `@my-sp-pr/database` | PG 配置、Pool、Drizzle、迁移工具 | 不监听 | — |
 
 请求链路：页面 → Hook → 生成 SDK / apiClient → Gateway → 对应后端服务。
-开发时 Vite 将同源 `/api` 原样代理到 `http://127.0.0.1:3000`；SSO 还代理两个精确 discovery 路径。Chat/Admin 可配置生产网关 API 地址，SSO Cookie API 始终同源，由登录站点反代 Gateway。
+开发时 Vite 将同源 `/api` 原样代理到 `http://127.0.0.1:3000`；SSO 还代理两个精确 discovery 路径。Chat 可配置生产网关 API 地址；Admin/SSO Cookie API 始终同源，由各自站点反代 Gateway。
 
 | 完整健康路径 | 响应服务 | 对应生成函数 |
 | --- | --- | --- |
@@ -94,6 +94,8 @@ Gateway 自身健康不代表所有下游健康。排查某个前端时检查它
 | 表结构与迁移 | 目标服务 `src/db/schema/`、`drizzle.config.ts`、`drizzle/`、[迁移执行器](backend/database/src/migrate.ts) |
 | SSO 登录与协议 | `backend/pr-auth/src/oidc/provider.ts`、`oidc/adapter.ts`、`controllers/auth.controller.ts`、`portal/client.ts` |
 | SSO 配置、账号和期限 | `backend/pr-auth/src/config/auth.ts`、`repositories/auth-store.ts`、`services/account.service.ts`、`auth/policy.ts` |
+| Admin 登录与发布 | `backend/pr-admin/src/auth/`、`repositories/`、`services/deployment.service.ts`、`frontend/pr-admin/src/pages/` |
+| 发布清单与 runner | `deploy.manifest.json`、`.github/workflows/deploy.yml`、`scripts/deploy/`、`deploy/pm2/` |
 
 先读取最相关的入口及其直接依赖；不要为了局部修改通读所有应用或生成文件。
 
@@ -194,11 +196,21 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 
 - issuer 为稳定 SSO Origin，Gateway/pr-auth 配置必须一致；开发为 `http://localhost:5175`，生产必须 HTTPS。同源 Cookie 无 Domain，不共享父域 Cookie。
 - 仅 Authorization Code + PKCE S256，机密客户端；私钥、client secret 和 token 均留在后端。静态注册客户端，精确回调/退出地址与 scopes/allowedRoles。
-- auth 七表归身份服务；角色固定 admin/user，默认 user。角色 scope 是身份声明，不代替未来业务权限或数据归属检查；管理员不默认可读其他用户私人数据。
+- auth 七表归身份服务；角色固定 super/admin/user，默认 user。空库 bootstrap 创建 super，已有 admin 不自动提升，最后一个有效 super 不能降级/禁用。角色 scope 是身份声明，不代替未来业务权限或数据归属检查；管理员不默认可读其他用户私人数据。
 - 中央登录最长 7 天、空闲 24 小时；退出当前浏览器撤销关联授权，其他设备保留。密码重置/禁用/角色变化递增 auth_version 并撤销该用户全部会话。
-- `auth:keys` 显式生成独立密钥配置，不在启动时生成。bootstrap/reset 使用隐藏输入及 app DML 凭据，不能固定默认密码；最后一个有效管理员不能被禁用/降权。
+- `auth:keys` 显式生成独立密钥配置，不在启动时生成。bootstrap/reset 使用隐藏输入及 app DML 凭据，不能固定默认密码；最后一个有效 super 不能被禁用/降权。
 - Adapter 的消费/撤销/期限语义必须保留；数据库失败不回退内存。维护命令显式运行，保留 tombstone 和审计期限；不在健康检查中清理。
-- SSO 前端仅登录/状态/退出/错误页面。未来 Admin 经受保护身份 API 管理账号，不直接写 auth Schema；Chat/Admin 接入和跨域应用会话撤销另行设计。
+- SSO 前端仅登录/状态/退出/错误页面。Admin 使用独立 HttpOnly BFF 会话并在线校验 UserInfo，不读写 auth Schema；Chat 接入和跨域应用会话撤销另行设计。
+
+### 发布平台边界
+
+- `deploy.manifest.json` 是项目/preset/变量白名单事实源；Admin 首版只同步当前仓库，不接受任意构建命令。
+- Admin 只创建 GitHub Deployment、保存审计与状态；不 clone/构建仓库、不保存 GitHub token 或 secret value、不直接 SSH。
+- branch/tag/SHA 在提交时解析为不可变 commit SHA。production 只允许环境配置的主分支/版本标签；不推荐每项目永久分支。
+- 每项目/环境使用独立 GitHub Environment。非敏感变量可读取，secret 只检查名称；migration secret 不进入长期 runtime.env。
+- GitHub-hosted runner 执行 install/build；目标 self-hosted runner 只下载制品、校验、迁移、切换、reload 和健康检查，不执行源码依赖安装。
+- 目标目录为 `/srv/my-sp-pr/<unit>/<environment>`，配置为 `/etc/my-sp-pr/<unit>/<environment>`；保留最近 5 个成功版本。代码可回滚，数据库迁移不自动回滚。
+- runner target 首版仅支持 `staging`、`production` 固定 label。目标 runner 只能绑定受控仓库，不运行 PR/fork workflow。
 
 ## 7. Gateway 与环境约定
 
@@ -207,7 +219,7 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 - 代理前不全局执行 JSON 解析，不缓存完整响应，不擅自添加重试或自动跟随重定向。
 - 保留正常上游状态、响应头与响应体；连接失败返回 502，超时返回 504。
 - 保持客户端取消时终止上游、部分响应失败时关闭连接的行为，不在已开始的响应后追加错误 JSON。
-- 当前普通请求的默认总代理期限为 8 秒，SSO portal 回调为 20 秒，前端超时为 10 秒；SSE/WebSocket 需要另行设计。
+- 当前普通请求的默认总代理期限为 8 秒，SSO portal/Admin OIDC 回调为 20 秒，前端超时为 10 秒；SSE/WebSocket 需要另行设计。
 - Gateway 生成并覆盖 X-Request-Id，下游复用；保留外部身份头清理，不把请求追踪字段当作身份。
 - 访问日志不包含凭证、完整请求体或 query；修改日志内容时仍须保留已有 console.log。
 - 仅 Gateway 管理浏览器 CORS；下游默认绑定 127.0.0.1。CORS 不替代身份鉴权或网络隔离。
@@ -238,6 +250,8 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 | 单服务离线生成 / 元数据检查 | `pnpm --filter @my-sp-pr/pr-chat-api db:generate` / `db:check` |
 | 真实 PG18 临时库验证 | `pnpm verify:database` |
 | SSO 协议/并发临时库验证 | `pnpm verify:auth` |
+| Admin 会话/发布临时库验证 | `pnpm verify:admin` |
+| 发布 manifest 校验 | `pnpm deploy:validate` |
 | SSO 密钥/首次管理员 | `pnpm --filter @my-sp-pr/pr-auth-api auth:keys` / `auth:bootstrap <username>` |
 | 密码恢复/显式清理 | `pnpm --filter @my-sp-pr/pr-auth-api auth:reset-password <username>` / `auth:cleanup` |
 | 生成并检查九个包和工具脚本 | `pnpm typecheck` |
@@ -280,7 +294,7 @@ lint 入口拒绝空参数及选项，具体规则见 `scripts/lint-files.mjs`�
 | 契约或跨服务改动 | 生成产物、受影响手写文件 lint、跨包类型检查/构建、经 Gateway 的端到端请求 |
 | Gateway 代理改动 | 上述相关检查，加上受影响的未知路由、上游故障、超时、流式和取消场景 |
 
-- 当前没有通用测试框架或 `pnpm test`；数据库集成验证使用 `pnpm verify:database`，SSO 验证使用 `pnpm verify:auth`。不把构建通过表述为测试全部通过。
+- 当前没有通用测试框架或 `pnpm test`；数据库集成验证使用 `pnpm verify:database`，SSO 验证使用 `pnpm verify:auth`，Admin 会话/发布验证使用 `pnpm verify:admin`。不把构建通过表述为测试全部通过。
 - 为复杂行为选择有实际价值的验证；不要为低影响文案修改新增测试框架。
 - 依赖新增先纳入方案；已有手段可验证时优先复用。
 - 检查成功后，只有出现新修改、失败或未解决风险才扩大或重复验证。

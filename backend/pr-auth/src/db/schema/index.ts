@@ -9,7 +9,7 @@ export const users = authSchema.table('users', {
   usernameNormalized: text('username_normalized').notNull(),
   displayName: text('display_name').notNull(),
   passwordHash: text('password_hash').notNull(),
-  role: text('role', { enum: ['admin', 'user'] }).notNull().default('user'),
+  role: text('role', { enum: ['super', 'admin', 'user'] }).notNull().default('user'),
   status: text('status', { enum: ['active', 'disabled'] }).notNull().default('active'),
   authVersion: integer('auth_version').notNull().default(1),
   passwordChangedAt: time('password_changed_at').notNull().defaultNow(),
@@ -18,7 +18,7 @@ export const users = authSchema.table('users', {
   updatedAt: time('updated_at').notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('users_username_unique').on(table.usernameNormalized),
-  check('users_role_check', sql`${table.role} in ('admin', 'user')`),
+  check('users_role_check', sql`${table.role} in ('super', 'admin', 'user')`),
   check('users_status_check', sql`${table.status} in ('active', 'disabled')`),
   check('users_version_check', sql`${table.authVersion} > 0`),
   check('users_username_check', sql`${table.usernameNormalized} ~ '^[a-z][a-z0-9._-]{2,31}$'`),

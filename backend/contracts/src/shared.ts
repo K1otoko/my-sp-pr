@@ -21,6 +21,12 @@ export const errorCodeSchema = z.enum([
   'RATE_LIMITED',
   'AUTH_FLOW_INVALID',
   'AUTH_UNAVAILABLE',
+  'CONFIGURATION_INCOMPLETE',
+  'DEPLOYMENT_CONFLICT',
+  'GITHUB_UNAVAILABLE',
+  'MANIFEST_INVALID',
+  'REF_NOT_ALLOWED',
+  'WEBHOOK_INVALID',
 ]).meta({ id: 'ErrorCode' });
 
 export const errorResponseSchema = z.object({
@@ -48,7 +54,7 @@ export type ErrorResponse = z.infer<typeof errorResponseSchema>;
 export type HealthData = z.infer<typeof healthDataSchema>;
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-export const authRoleSchema = z.enum(['admin', 'user']).meta({ id: 'AuthRole' });
+export const authRoleSchema = z.enum(['super', 'admin', 'user']).meta({ id: 'AuthRole' });
 export type AuthRole = z.infer<typeof authRoleSchema>;
 export const authUserSchema = z.object({
   id: z.uuid(),

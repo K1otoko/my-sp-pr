@@ -33,12 +33,13 @@ export function SessionPage() {
       {signedOut ? <Button type="primary" href="/api/auth/portal/start" size="large" block>重新登录</Button> : <AuthLoading text="正在前往登录页…" />}
     </AuthCard>
   );
+  const roleLabel = { super: '超级管理员', admin: '管理员', user: '普通用户' }[current.user.role];
   return (
     <AuthCard title="你已登录" description="可以返回已接入的应用继续使用。">
       <div className="flex items-center gap-3">
         <CheckCircleOutlined className="text-xl" style={{ color: 'var(--app-primary)' }} />
         <Typography.Text strong className="min-w-0 flex-1 break-all text-lg">{current.user.displayName}</Typography.Text>
-        <Tag>{current.user.role === 'admin' ? '管理员' : '普通用户'}</Tag>
+        <Tag>{roleLabel}</Tag>
       </div>
       <Typography.Paragraph type="secondary" className="mb-0! mt-2 break-all">@{current.user.username}</Typography.Paragraph>
       <Divider />

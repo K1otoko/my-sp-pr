@@ -113,7 +113,8 @@ async function verify() {
     jwks: { keys: [{ ...await exportJWK(privateKey), kid: 'test', use: 'sig', alg: 'RS256' }] }, portalSecret: randomToken(),
     clients: ['client-a', 'client-b', 'admin-only'].map((clientId) => ({
       clientId, name: clientId, secret: secretA, redirectUris: [`http://localhost:49101/cb`],
-      postLogoutRedirectUris: [], scopes: ['openid', 'profile', 'roles'], allowedRoles: clientId === 'admin-only' ? ['admin'] : ['user', 'admin'], refreshToken: true,
+      postLogoutRedirectUris: [], scopes: ['openid', 'profile', 'roles'],
+      allowedRoles: clientId === 'admin-only' ? ['super', 'admin'] : ['super', 'admin', 'user'], refreshToken: true,
     })),
   }), { mode: 0o600 });
   const authEnv = { HOST: '127.0.0.1', PORT: String(authPort), SSO_PUBLIC_ORIGIN: origin, AUTH_CONFIG_FILE: configPath };
@@ -122,6 +123,7 @@ async function verify() {
   const accounts = accountService(store);
   const password = randomToken();
   const administrator = await accounts.bootstrap('owner', password);
+  assert.equal(administrator.role, 'super');
   await assert.rejects(() => accounts.bootstrap('duplicate', password), (error: unknown) => error instanceof AppError && error.statusCode === 409);
   const passwordHash = await hashPassword(password);
   assert(await verifyPassword(password, passwordHash));
@@ -130,8 +132,9 @@ async function verify() {
   assert.equal(user!.role, 'user');
   await database.db.insert(users).values({ usernameNormalized: 'disabled', displayName: 'disabled', passwordHash, status: 'disabled' });
   await assert.rejects(() => accounts.changeAccount(administrator.id, { role: 'user' }));
+  await assert.rejects(() => accounts.changeAccount(administrator.id, { status: 'disabled' }));
   await assert.rejects(() => database.db.insert(users).values({ usernameNormalized: 'member', displayName: 'duplicate', passwordHash }));
-  console.log('[sso-verify] PASS password hashing, username uniqueness, default role, bootstrap and last administrator.');
+  console.log('[sso-verify] PASS password hashing, username uniqueness, default role, super bootstrap and last-super protection.');
 
   let auth = start(join(root, 'backend/pr-auth/dist/server.js'), authEnv);
   await healthy(`http://127.0.0.1:${authPort}/api/auth/ready`, auth);
@@ -200,7 +203,7 @@ async function verify() {
   const adminBrowser = new Browser();
   const adminFlow = await authorization(adminBrowser, 'admin-only');
   const adminCallback = await login(adminBrowser, adminFlow.url, 'owner');
-  assert.deepEqual((await exchange(adminFlow, adminCallback.url)).claims()?.roles, ['admin']);
+  assert.deepEqual((await exchange(adminFlow, adminCallback.url)).claims()?.roles, ['super']);
   console.log('[sso-verify] PASS code+PKCE, verified JWT/UserInfo, client A/B SSO, separate device and role admission.');
 
   stage = 'portal and persistence';

@@ -1,0 +1,202 @@
+name: Deploy
+
+on:
+  deployment:
+
+concurrency:
+  group: deploy-${{ github.repository_id }}-${{ github.event.deployment.payload.unitId }}-${{ github.event.deployment.environment }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ github.event.deployment.task == 'deploy' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      runner_target: ${{ steps.validate.outputs.runner_target }}
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      GITHUB_DEPLOYMENT_ID: ${{ github.event.deployment.id }}
+      DEPLOY_BUILD_VARIABLES_JSON: ${{ toJson(github.event.deployment.payload.buildVariables) }}
+    steps:
+      - name: Mark deployment in progress
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/deployments/${GITHUB_DEPLOYMENT_ID}/statuses" \
+            --data "{\"state\":\"in_progress\",\"description\":\"Building release artifact\",\"log_url\":\"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
+      - name: Validate deployment target
+        id: validate
+        env:
+          UNIT_ID: ${{ github.event.deployment.payload.unitId }}
+          RUNNER_TARGET: ${{ github.event.deployment.payload.runnerTarget }}
+        run: |
+          case "${UNIT_ID}" in
+            pr-chat-web|pr-admin-web|pr-sso-web|gateway|pr-chat-api|pr-auth-api|pr-admin-api) ;;
+            *) echo "Unsupported deployment unit" >&2; exit 1 ;;
+          esac
+          case "${RUNNER_TARGET}" in
+            staging|production) echo "runner_target=${RUNNER_TARGET}" >> "${GITHUB_OUTPUT}" ;;
+            *) echo "Unsupported runner target" >&2; exit 1 ;;
+          esac
+      - name: Checkout trusted deployment control
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          path: .deployment-control
+          sparse-checkout: |
+            deploy.manifest.json
+            deploy/pm2
+            scripts/deploy
+          sparse-checkout-cone-mode: false
+      - name: Checkout immutable application commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.deployment.sha }}
+          persist-credentials: false
+          path: .deployment-source
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: .deployment-source/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: .deployment-source
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: Build selected unit
+        run: |
+          node .deployment-control/scripts/deploy/build.mjs \
+            --unit "${{ github.event.deployment.payload.unitId }}" \
+            --sha "${{ github.event.deployment.sha }}" \
+            --deployment-id "${{ github.event.deployment.payload.deploymentId }}" \
+            --github-deployment-id "${{ github.event.deployment.id }}" \
+            --source ".deployment-source" \
+            --control ".deployment-control" \
+            --out "${RUNNER_TEMP}/release"
+      - name: Upload immutable artifact
+        run: tar -C "${RUNNER_TEMP}/release" -czf "${RUNNER_TEMP}/release-${GITHUB_DEPLOYMENT_ID}.tgz" .
+      - name: Store immutable artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ github.event.deployment.id }}
+          path: ${{ runner.temp }}/release-${{ github.event.deployment.id }}.tgz
+          if-no-files-found: error
+          retention-days: 7
+      - name: Mark build failure
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/deployments/${GITHUB_DEPLOYMENT_ID}/statuses" \
+            --data "{\"state\":\"failure\",\"description\":\"Release build failed\",\"log_url\":\"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, linux, x64, "${{ needs.build.outputs.runner_target }}"]
+    environment:
+      name: ${{ github.event.deployment.environment }}
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+    env:
+      GITHUB_DEPLOYMENT_ID: ${{ github.event.deployment.id }}
+      DEPLOY_UNIT_ID: ${{ github.event.deployment.payload.unitId }}
+      DEPLOY_ENVIRONMENT: ${{ github.event.deployment.payload.environment }}
+      DEPLOY_HEALTH_URL: ${{ github.event.deployment.payload.healthUrl }}
+      DEPLOY_RUN_MIGRATION: ${{ github.event.deployment.payload.migration }}
+      DEPLOY_CONTROL_SHA: ${{ github.workflow_sha }}
+      DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT }}
+      DEPLOY_CONFIG_ROOT: ${{ vars.DEPLOY_CONFIG_ROOT }}
+      DEPLOY_VAR_HOST: ${{ vars.HOST }}
+      DEPLOY_VAR_PORT: ${{ vars.PORT }}
+      DEPLOY_VAR_CHAT_SERVICE_URL: ${{ vars.CHAT_SERVICE_URL }}
+      DEPLOY_VAR_AUTH_SERVICE_URL: ${{ vars.AUTH_SERVICE_URL }}
+      DEPLOY_VAR_ADMIN_SERVICE_URL: ${{ vars.ADMIN_SERVICE_URL }}
+      DEPLOY_VAR_CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+      DEPLOY_VAR_SSO_PUBLIC_ORIGIN: ${{ vars.SSO_PUBLIC_ORIGIN }}
+      DEPLOY_VAR_TRUSTED_PROXY_CIDRS: ${{ vars.TRUSTED_PROXY_CIDRS }}
+      DEPLOY_VAR_UPSTREAM_TIMEOUT_MS: ${{ vars.UPSTREAM_TIMEOUT_MS }}
+      DEPLOY_VAR_AUTH_FLOW_TIMEOUT_MS: ${{ vars.AUTH_FLOW_TIMEOUT_MS }}
+      DEPLOY_VAR_DATABASE_SSL_MODE: ${{ vars.DATABASE_SSL_MODE }}
+      DEPLOY_VAR_DATABASE_SSL_CA_FILE: ${{ vars.DATABASE_SSL_CA_FILE }}
+      DEPLOY_VAR_DATABASE_POOL_MAX: ${{ vars.DATABASE_POOL_MAX }}
+      DEPLOY_VAR_ADMIN_PUBLIC_ORIGIN: ${{ vars.ADMIN_PUBLIC_ORIGIN }}
+      DEPLOY_VAR_ADMIN_OIDC_CLIENT_ID: ${{ vars.ADMIN_OIDC_CLIENT_ID }}
+      DEPLOY_VAR_GITHUB_APP_ID: ${{ vars.GITHUB_APP_ID }}
+      DEPLOY_VAR_GITHUB_APP_PRIVATE_KEY_FILE: ${{ vars.GITHUB_APP_PRIVATE_KEY_FILE }}
+      DEPLOY_VAR_GITHUB_INSTALLATION_ID: ${{ vars.GITHUB_INSTALLATION_ID }}
+      DEPLOY_VAR_GITHUB_REPOSITORY: ${{ vars.GITHUB_REPOSITORY }}
+      DEPLOY_VAR_GITHUB_ALLOWED_OWNERS: ${{ vars.GITHUB_ALLOWED_OWNERS }}
+      DEPLOY_VAR_GITHUB_RUNNER_TARGETS: ${{ vars.GITHUB_RUNNER_TARGETS }}
+      DEPLOY_VAR_AUTH_CONFIG_FILE: ${{ vars.AUTH_CONFIG_FILE }}
+      DEPLOY_VAR_AUTH_TRUSTED_GATEWAY_CIDRS: ${{ vars.AUTH_TRUSTED_GATEWAY_CIDRS }}
+      DEPLOY_SECRET_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DEPLOY_SECRET_DATABASE_MIGRATION_URL: ${{ secrets.DATABASE_MIGRATION_URL }}
+      DEPLOY_SECRET_ADMIN_OIDC_CLIENT_SECRET: ${{ secrets.ADMIN_OIDC_CLIENT_SECRET }}
+      DEPLOY_SECRET_ADMIN_TOKEN_ENCRYPTION_KEYS: ${{ secrets.ADMIN_TOKEN_ENCRYPTION_KEYS }}
+      DEPLOY_SECRET_ADMIN_CSRF_HMAC_KEY: ${{ secrets.ADMIN_CSRF_HMAC_KEY }}
+      DEPLOY_SECRET_GITHUB_WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET }}
+    steps:
+      - name: Download trusted deployment control
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/deploy-control"
+          fetch_control() {
+            curl --fail-with-body --silent --show-error --location \
+              --header "Accept: application/vnd.github.raw+json" \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/contents/$1?ref=${DEPLOY_CONTROL_SHA}" \
+              --output "${RUNNER_TEMP}/deploy-control/$2"
+          }
+          fetch_control scripts/deploy/install.mjs install.mjs
+          fetch_control scripts/deploy/github-status.mjs github-status.mjs
+          fetch_control deploy/pm2/ecosystem.config.cjs ecosystem.config.cjs
+          fetch_control deploy.manifest.json deploy.manifest.json
+      - name: Download release artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-${{ github.event.deployment.id }}
+          path: ${{ runner.temp }}/release
+      - name: Verify and install release
+        run: |
+          mkdir -p "${DEPLOY_ROOT:-/srv/my-sp-pr}/.locks"
+          flock -x "${DEPLOY_ROOT:-/srv/my-sp-pr}/.locks/${DEPLOY_UNIT_ID}-${DEPLOY_ENVIRONMENT}.lock" \
+            node "${RUNNER_TEMP}/deploy-control/install.mjs" \
+              --archive "${RUNNER_TEMP}/release/release-${GITHUB_DEPLOYMENT_ID}.tgz" \
+              --work "${RUNNER_TEMP}/release-expanded" \
+              --control "${RUNNER_TEMP}/deploy-control"
+      - name: Mark deployment successful
+        if: ${{ success() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node "${RUNNER_TEMP}/deploy-control/github-status.mjs" success "Release installed and healthy"
+      - name: Mark deployment failed
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/deployments/${GITHUB_DEPLOYMENT_ID}/statuses" \
+            --data "{\"state\":\"failure\",\"description\":\"Release install or health check failed\",\"log_url\":\"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"

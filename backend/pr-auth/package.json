@@ -22,6 +22,7 @@
     "db:migrate:prod": "node dist/db/migrate.js",
     "auth:keys": "tsx src/scripts/generate-keys.ts",
     "auth:bootstrap": "tsx src/scripts/bootstrap-auth.ts",
+    "auth:set-role": "tsx src/scripts/set-role.ts",
     "auth:reset-password": "tsx src/scripts/reset-password.ts",
     "auth:cleanup": "tsx src/scripts/cleanup-auth.ts"
   },

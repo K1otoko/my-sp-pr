@@ -1,8 +1,7 @@
 import { createClient } from './generated/client';
 import type { ErrorResponse } from './generated/types.gen';
 
-const baseUrl = (import.meta.env.VITE_API_BASE_URL?.trim() || '/api').replace(/\/+$/u, '');
-export const apiClient = createClient({ baseUrl, parseAs: 'json' });
+export const apiClient = createClient({ baseUrl: '/api', parseAs: 'json', credentials: 'same-origin' });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

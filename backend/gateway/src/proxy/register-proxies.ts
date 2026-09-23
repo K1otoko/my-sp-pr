@@ -72,7 +72,8 @@ export function registerProxies(app: Express) {
       .map((operation) => ({
         method: operation.method,
         path: fullPath(service, operation),
-        timeoutMs: operation.operationId === 'completeAuthPortal' ? env.authFlowTimeoutMs : env.upstreamTimeoutMs,
+        timeoutMs: ['completeAuthPortal', 'completeAdminAuthLogin'].includes(operation.operationId)
+          ? env.authFlowTimeoutMs : env.upstreamTimeoutMs,
       }));
     if (service.service === 'pr-auth') {
       routes.push(...authProtocolRoutes.map(({ method, path }) => ({ method, path, timeoutMs: env.upstreamTimeoutMs })));

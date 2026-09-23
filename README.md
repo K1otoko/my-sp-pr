@@ -2,7 +2,7 @@
 
 React 19 + Ant Design 6 + Vite + Express 5 + Node.js 24 的 pnpm workspace。包含三个前端、四个后端、契约包和数据库包，前端统一通过 Gateway 访问 API。
 
-当前提供真实健康检查、PostgreSQL 18 + Drizzle，以及基于 oidc-provider 的 SSO：用户名密码登录、持久化中央会话、两角色准入和当前浏览器退出。Chat/Admin 尚未接入登录，注册、账号管理、系统设置和业务权限页面后续单独实现。
+当前提供真实健康检查、PostgreSQL 18 + Drizzle，以及基于 oidc-provider 的 SSO：用户名密码登录、持久化中央会话、`super/admin/user` 三角色准入和当前浏览器退出。Admin 已通过 OIDC BFF 接入 SSO；`admin` 可进入平台，只有 `super` 可使用 GitHub Deployment 发布模块。Chat 尚未接入登录，注册、账号管理、系统设置和聊天业务权限后续单独实现。
 
 ## 快速开始
 
@@ -14,11 +14,11 @@ pnpm generate:api
 pnpm db:bootstrap # 首次空库初始化；先按下方说明配置管理员 URL
 pnpm db:migrate
 pnpm --filter @my-sp-pr/pr-auth-api auth:keys
-pnpm --filter @my-sp-pr/pr-auth-api auth:bootstrap owner
+pnpm --filter @my-sp-pr/pr-auth-api auth:bootstrap owner # 首账号为 super
 pnpm dev
 ```
 
-三个业务后端必须配置各自 `.env` 并完成数据库迁移；已初始化的数据库跳过 db:bootstrap。已有身份配置/用户跳过 auth:keys/auth:bootstrap，前者不覆盖已有文件，后者只允许空用户库。管理员密码在终端隐藏输入，15–128 字符。根开发命令先生成接口、编译数据库包，再启动七个应用、契约监听和数据库包编译监听；`Ctrl+C` 关闭全部子进程。
+三个业务后端必须配置各自 `.env` 并完成数据库迁移；Admin 还需要 OIDC 会话密钥，启用发布时需要 GitHub App 配置。已初始化的数据库跳过 db:bootstrap。已有身份配置/用户跳过 auth:keys/auth:bootstrap，前者不覆盖已有文件，后者只允许空用户库。密码在终端隐藏输入，15–128 字符。根开发命令先生成接口、编译数据库包，再启动七个应用、契约监听和数据库包编译监听；`Ctrl+C` 关闭全部子进程。
 
 | 项目路径 | 包名 | 开发端口 | 预览端口 | 健康接口 |
 | --- | --- | --- | --- | --- |
@@ -53,6 +53,9 @@ scripts/
   generate-api.ts          # 编译契约、生成文档与 SDK、按内容发布
   watch-api.ts             # 防抖、串行生成与失败恢复
   lint-files.mjs           # 仅允许显式指定变更文件
+  deploy/                  # 固定 preset 构建、制品校验、版本切换与状态回写
+deploy.manifest.json       # 7 个独立发布 unit 及变量白名单
+.github/workflows/deploy.yml # GitHub Deployment 构建/发布工作流
 ```
 
 各前端保留页面、布局、`hooks/useHealth.ts`、`api/client.ts` 和 `api/generated/`。各后端保留 `routes`、`controllers`、`services`、`middlewares`、`config` 分层，以及自己的 `dist/`、`generated/openapi.json`。三个业务服务独立维护 `src/db/schema/`、`drizzle.config.ts` 和版本管理中的 `drizzle/` 迁移。
@@ -93,6 +96,8 @@ scripts/
 | `pnpm db:migrate` | 编译数据库包，按 auth → chat → admin 显式迁移 |
 | `pnpm verify:database` | 在临时 PG18 库运行集成验证，需管理员及服务凭据 |
 | `pnpm verify:auth` | 生成/构建身份服务与 Gateway，在独立临时库验证真实 OIDC 流程及并发 |
+| `pnpm verify:admin` | 在独立临时库验证 Admin 会话、发布状态机、并发和 webhook |
+| `pnpm deploy:validate` | 校验 `deploy.manifest.json` 的 preset、路径和变量白名单 |
 | `pnpm build` | 先生成、检查类型，再按依赖顺序构建 |
 | `pnpm start:backend` | 并发运行四个已构建后端 |
 | `pnpm preview:frontend` | 在 4173/4174/4175 预览前端构建 |
@@ -213,7 +218,7 @@ Gateway `/api/health` 只表示网关自身可响应。停止某个下游时，�
 
 - 只按契约的公开 method/完整路径转发；不做路径重写，保留 query、编码、请求体、下游状态、响应头与响应体。GET 可接受标准 HEAD 请求，其他未声明方法或路径返回统一 404。
 - 代理前不全局读取 JSON，不缓冲整段响应，不自动重试或跟随重定向。下游负责 JSON 100kb 限制。
-- 普通请求默认总代理期限 8 秒，同时设置代理空闲超时；SSO portal 回调默认 20 秒，以容纳服务端 token 交换和会话持久化。前端超时 10 秒。失败由用户点击重试，不无限重试。
+- 普通请求默认总代理期限 8 秒，同时设置代理空闲超时；SSO portal 与 Admin OIDC 回调默认 20 秒，以容纳服务端 token 交换和会话持久化。前端超时 10 秒。失败由用户点击重试，不无限重试。
 - 连接/DNS/上游断开返回 502；总代理期限到达返回 504。客户端断连时取消上游。已开始的响应发生故障时关闭连接，不追加 JSON。
 - 网关覆盖外部 `X-Request-Id`，生成 UUID 并传递给下游；响应暴露该头。下游复用合法 UUID，直连时可生成本地 ID。
 - 清除外部 `X-User-Id`、`X-Roles`、`X-Permissions`、Forwarded 和 X-Forwarded-*。Gateway 不产生登录身份；向 pr-auth 重建固定 issuer 的 Host/proto 和可信 IP。访问日志不记录凭证或 query。
@@ -229,7 +234,7 @@ Gateway `/api/health` 只表示网关自身可响应。停止某个下游时，�
 
 ## 环境变量
 
-Chat/Admin 的 `VITE_API_BASE_URL` 默认 `/api`，生产可设为 `https://api.example.com/api`；此值进入静态资源，不能存放密钥。SSO 的 Cookie API 固定同源 `/api`，生产登录站点必须反代 Gateway，不能改为跨域 API。
+Chat 的 `VITE_API_BASE_URL` 默认 `/api`，生产可指向 Gateway；此值进入静态资源，不能存放密钥。Admin 和 SSO 使用 HttpOnly Cookie，API 必须保持同源 `/api`，各站点生产入口都需反代 Gateway，不能改成跨域 Cookie API。
 
 后端使用 Node 24 原生 `.env` 加载，路径与当前 shell 目录无关，进程环境变量优先。
 
@@ -250,6 +255,8 @@ Chat/Admin 的 `VITE_API_BASE_URL` 默认 `/api`，生产可设为 `https://api.
 | AUTH_CONFIG_FILE | 不使用 | pr-auth 默认 .deploy/auth.json，0600 |
 
 Gateway 在生产环境必须显式设置三个上游、CORS 白名单和 SSO_PUBLIC_ORIGIN。Origin 不含凭据、路径、query、hash 或末尾斜杠。上游不得指向已知的网关自身地址；部署时也需排除 DNS 别名或负载均衡导致的自环。
+
+Admin 的 OIDC 与 GitHub 配置见 `backend/pr-admin/.env.example`。`ADMIN_TOKEN_ENCRYPTION_KEYS` 是 JSON key ring，key 和 `ADMIN_CSRF_HMAC_KEY` 都是 32 字节 base64url；`ADMIN_OIDC_CLIENT_SECRET` 必须与 auth.json 中的 `pr-admin` 客户端一致。GitHub App 私钥使用目标机 `0600` 文件路径，不把 PEM 放入数据库或前端变量。
 
 修改下游端口时只同步 Gateway 的对应 `*_SERVICE_URL`。SSO 开发固定使用 localhost，与 issuer 完全一致。discovery/JWKS 可无凭证跨域 GET；授权/退出允许顶层导航，token/UserInfo/introspection/revoke 只由后端调用；SSO JSON 写操作严格检查同源和 CSRF。不全局启用跨域 Cookie。
 
@@ -285,30 +292,69 @@ Gateway 的 HTTPS 入口可由部署平台或反向代理提供；不托管前�
 
 SSO 本地日常联调使用 `pnpm dev` 的 localhost:5175；生产模式必须提供 HTTPS 入口。`vite preview` 仅用于本地静态资源验证，直接改变预览端口不能代替 issuer/同源反代配置。
 
+## Admin 发布平台
+
+`deploy.manifest.json` 登记 3 个前端和 4 个后端 unit。Admin 只接受两个固定 preset，不保存任意 shell 命令：
+
+- `pnpm-vite-static-v1`：生成 API、目标类型检查和 Vite build。
+- `pnpm-node-service-v1`：生成 API、按需构建 database、目标类型检查/build，再用 `pnpm deploy --prod --legacy` 生成独立生产包。
+
+发布链路为 Admin → GitHub Deployment → GitHub-hosted runner 构建 → Linux self-hosted runner 安装。Admin 在创建 deployment 前把 branch/tag/SHA 解析为不可变 commit SHA；production 环境仍需配置允许的主分支或版本 tag。每项目一条永久分支不是推荐模式，共享 contracts/database/Gateway 会产生长期漂移；使用主干开发、临时功能分支发 staging、版本 tag 发 production 更可控。
+
+每个“项目 + 环境”使用独立 GitHub Environment。manifest 中 `build` 非敏感变量可进入制品构建；`runtime` 变量/secret 只注入目标 runner；`migration` secret 只进入迁移子进程，不写入长期 `runtime.env`。Admin 读取普通变量值与 secret 名称来判断完整性，永不读取 secret value。`VITE_*` 会进入浏览器资源，不能保存密钥。
+
+目标 runner 只支持 `staging`、`production` 两个受控 label，必须是专用 Linux/x64 用户且不能运行 PR/fork 构建。它不 checkout 应用源码、不安装依赖、不执行构建；安装工具从当前 workflow commit 读取，应用制品使用 tar 保留 pnpm 内部链接并逐项校验 SHA256。默认目录：
+
+```text
+/srv/my-sp-pr/<unit>/<environment>/
+  releases/<sha>-<deployment-id>/
+  current -> releases/<...>/
+  previous -> releases/<...>/
+/etc/my-sp-pr/<unit>/<environment>/runtime.env
+```
+
+Nginx 的前端 root 指向对应 `current`，后端由 `deploy/pm2/ecosystem.config.cjs` 按 unit 单独 reload。健康失败恢复上一版应用；已成功数据库迁移不自动回滚。保留最近 5 个成功制品，当前/上一版不会清理。
+
+首次启用：
+
+1. 在 GitHub 创建 App，授予目标仓库 Contents 读取、Deployments 读写、Environments 读取，并把 webhook 指向 `/api/admin/deploy/github/events`。
+2. 在 pr-admin 配置 App ID、installation ID、私钥路径、webhook secret、仓库和 owner/runner 白名单。
+3. 为每个 unit/environment 创建 GitHub Environment，按 manifest 配置 variables/secrets；基础设施变量 `DEPLOY_ROOT`、`DEPLOY_CONFIG_ROOT` 可覆盖默认目录。
+4. 在目标机安装 Node.js 24、PM2、`flock`、Nginx 和带 `staging`/`production` 标签的专用 self-hosted runner，授权其对应 `/srv`、`/etc` 目录。
+5. 执行 auth `0003`、admin `0002` 迁移，提升至少一个已有账号为 `super`，部署 Auth、Gateway、Admin API/Web 后从 Admin 同步 manifest。
+
+```sh
+pnpm deploy:validate
+pnpm --filter @my-sp-pr/pr-auth-api auth:set-role owner super
+```
+
+GitHub Environments、域名/TLS、数据库角色和目标目录仍需一次性人工准备。未来仓库导入可复用 manifest/preset，但不会自动创建本系统 API 契约、Gateway 上游、数据库 namespace 或域名。
+
 ## SSO 配置、数据与权限
 
 身份服务使用 Authorization Code + PKCE S256，内置机密客户端 `pr-sso-portal` 支持直接打开 SSO。浏览器只持有 HttpOnly Cookie，不接收 client secret 或 OIDC token。SSO Origin 就是 issuer；登录页不能接受任意 returnUrl。
 
 中央登录最长 7 天、连续 24 小时无有效认证活动过期。退出撤销当前浏览器会话及关联授权，其他设备保留；重置密码、禁用和角色变化会撤销该用户全部设备。ID Token 5 分钟，仅用于登录验证；Access Token 为 5 分钟不透明值，当前用于 UserInfo。登记的测试/未来客户端可启用轮换刷新令牌，期限受中央会话约束。
 
-权限固定为 `user`（默认）和 `admin`，静态客户端通过 `allowedRoles` 控制准入，`roles` scope 返回角色。它不授予尚未实现的业务接口权限。管理员也不自动获得他人私人聊天数据。未来 Admin 管理账号和设置，须经受保护身份 API，不能写 auth 表；Chat/Admin 的本地会话、在线撤销检查及业务鉴权尚未接入。当前没有 back-channel logout，不会清除其他域的 Cookie。
+权限固定为 `user`（默认）、`admin` 和 `super`，静态客户端通过 `allowedRoles` 控制准入，`roles` scope 返回角色。Admin 的机密 OIDC 客户端允许 `admin/super`，每次发布 API 都在线调用 UserInfo；SSO 不可用时 fail closed。只有 `super` 可访问发布 API，最后一个有效 super 不能降级或禁用。角色 scope 不代替未来聊天业务权限，管理员也不自动获得他人私人数据。当前没有 back-channel logout，不会清除其他域的 Cookie。
 
 auth 的 `0002_sso_identity` 增量迁移创建七张表：users、auth_sessions、oidc_artifacts、browser_transactions、portal_sessions、login_rate_limits、auth_audit_logs。用户名规范化后唯一；密码为带随机盐的 scrypt 摘要。协议 payload 使用独立 AES-GCM key ring 加密，token 索引保存摘要。一次性消费、撤销和账号变更使用数据库事务锁，适合小规模部署；扩容前应压测这一串行写入点。每实例最多两个并行 KDF，约需 256 MiB 以上额外内存预算。
 
 `auth:keys` 默认在 `backend/pr-auth/.deploy/auth.json` 生成受保护 JSON。非默认路径请通过进程环境变量 `AUTH_CONFIG_FILE` 传给该命令（密钥命令不读取服务 .env），服务启动时使用相同路径。文件包含独立 cookieKeys、encryptionKeys（id/key）、hmacKey、RS256 私有 jwks、portalSecret 和 clients；多实例配置一致，不能在每次启动时重新生成。
 
-默认 clients 为空，仅内置 portal。未来静态客户端字段为：clientId、name、secret（至少 43 字符）、redirectUris、postLogoutRedirectUris、allowedRoles、scopes（只能 openid/profile/roles，必须含 openid）、refreshToken。URI 精确匹配，生产全部 HTTPS，无通配符；不要将临时客户端或私钥提交到 Git。关闭动态注册、隐式授权、密码 grant、离线授权及未使用扩展。
+默认 clients 为空，仅内置 portal。启用 Admin 前在 auth.json 的 clients 中登记 `pr-admin`：secret 与 Admin 环境一致，redirect URI 为 `<ADMIN_PUBLIC_ORIGIN>/api/admin/auth/callback`，post-logout URI 为 `<ADMIN_PUBLIC_ORIGIN>/?signed_out=1`，`allowedRoles` 为 `["super","admin"]`，scopes 为 `["openid","profile","roles"]`，`refreshToken` 为 true。URI 精确匹配，生产全部 HTTPS，无通配符；不要将客户端 secret 或私钥提交到 Git。关闭动态注册、隐式授权、密码 grant、离线授权及未使用扩展。
 
 ```sh
 # 已有数据库只执行增量迁移，不重复 db:bootstrap
 pnpm --filter @my-sp-pr/pr-auth-api db:migrate
 pnpm --filter @my-sp-pr/pr-auth-api auth:keys
 pnpm --filter @my-sp-pr/pr-auth-api auth:bootstrap owner
+pnpm --filter @my-sp-pr/pr-auth-api auth:set-role owner super
 pnpm --filter @my-sp-pr/pr-auth-api auth:reset-password owner
 pnpm --filter @my-sp-pr/pr-auth-api auth:cleanup
 ```
 
-bootstrap/reset 使用 auth app 账号及隐藏密码输入，也可由受保护标准输入提供；不能把密码放命令参数。最后一个有效管理员不能降权/禁用。cleanup 需显式调度，按表每批最多 500 行、最多 100 批，过期状态额外保留 7 天 tombstone、审计保留 90 天；不在启动或健康检查中清理。独立产物对应 `node dist/scripts/<generate-keys|bootstrap-auth|reset-password|cleanup-auth>.js`。
+bootstrap/reset 使用 auth app 账号及隐藏密码输入，也可由受保护标准输入提供；不能把密码放命令参数。空库 bootstrap 创建 `super`；已有 admin 不自动提升。`auth:set-role` 会递增 auth_version 并撤销该账号全部会话。最后一个有效 super 不能降权/禁用。cleanup 需显式调度，按表每批最多 500 行、最多 100 批，过期状态额外保留 7 天 tombstone、审计保留 90 天；不在启动或健康检查中清理。独立产物对应 `node dist/scripts/<generate-keys|bootstrap-auth|set-role|reset-password|cleanup-auth>.js`。
 
 Cookie/加密轮换时新 key 放前，旧 key 保留至全部 7 天状态过期并清理；HMAC key 暂不支持平滑轮换，修改会使旧 CSRF/审计关联失效，应作为计划内操作。当前配置接受完整 RSA 私钥 JWK；JWK 轮换先将新 key 加到末尾并发布，待客户端缓存刷新后移到首位签名，至少等待 token/缓存期限后移除旧 key。私钥仍只在服务端，JWKS 端点只返回公钥。登录页采用 no-referrer；退出确认页采用 same-origin，使原生表单 POST 保留 Origin 供严格同源校验，引用信息仍不发往其他站点。
 
@@ -343,6 +389,6 @@ server {
 
 同机配置 Gateway `TRUSTED_PROXY_CIDRS=loopback`，两端 `SSO_PUBLIC_ORIGIN=https://sso.example.com`。pr-auth 的 portal 兑换需要服务端能访问这个固定 issuer 的 token/UserInfo/JWKS 路径，请保证 DNS、TLS 和入口回环可达。
 
-SSO 验证：`pnpm verify:auth` 需要显式 DATABASE_VERIFY_ADMIN_URL，默认读取 pr-auth/.env 中运行/迁移连接，可用 DATABASE_VERIFY_AUTH_URL、DATABASE_VERIFY_AUTH_MIGRATION_URL、DATABASE_VERIFY_SSL_MODE 指向独立测试集群。三者必须同集群同初始库；管理员可建库，auth 两个 SQL 角色预先存在。脚本只操作新建临时库，覆盖迁移升级、真实登录/SSO/退出、重启、并发消费与撤销、角色变化和协议边界，最后清理。`verify:database` 另覆盖三服务数据库故障/恢复，支持 `DATABASE_VERIFY_<AUTH|CHAT|ADMIN>_RUNTIME_URL` 及对应 `MIGRATION_URL`，避免与管理员 URL 混淆。
+SSO 验证：`pnpm verify:auth` 需要显式 DATABASE_VERIFY_ADMIN_URL，默认读取 pr-auth/.env 中运行/迁移连接，可用 DATABASE_VERIFY_AUTH_URL、DATABASE_VERIFY_AUTH_MIGRATION_URL、DATABASE_VERIFY_SSL_MODE 指向独立测试集群。Admin 验证使用 `pnpm verify:admin`，默认读取 pr-admin/.env，可用 `DATABASE_VERIFY_ADMIN_RUNTIME_URL` 和 `DATABASE_VERIFY_ADMIN_MIGRATION_URL` 覆盖；它验证一次性登录 flow、refresh/角色撤销、super 授权、manifest 同步、SHA 固定、并发锁及 webhook 验签/重放。脚本只操作新建临时库并最终清理。`verify:database` 另覆盖三服务数据库故障/恢复。
 
 跨主域接入通过顶层导航到固定 issuer，未来应用各自保存本域会话；仍需在真实 HTTPS 不同站点部署后验收。聊天长连接的 SSE/WebSocket、心跳和超时另行设计。

@@ -13,10 +13,10 @@ export function accountService(store: AuthStore) {
       const passwordHash = await hashPassword(password);
       return store.write(async (tx) => {
         if ((await tx.select({ id: users.id }).from(users).limit(1)).length) {
-          throw new AppError(409, 'FORBIDDEN', '已有账号，不能重复初始化管理员');
+          throw new AppError(409, 'FORBIDDEN', '已有账号，不能重复初始化超级管理员');
         }
         const [user] = await tx.insert(users).values({
-          usernameNormalized, displayName: usernameNormalized, passwordHash, role: 'admin',
+          usernameNormalized, displayName: usernameNormalized, passwordHash, role: 'super',
         }).returning();
         await store.audit(tx, { event: 'account.bootstrap', userId: user!.id, outcome: 'success', reason: 'created' });
         return user!;
@@ -41,9 +41,10 @@ export function accountService(store: AuthStore) {
         if (!current) throw new AppError(404, 'NOT_FOUND', '账号不存在');
         const nextRole = change.role ?? current.role;
         const nextStatus = change.status ?? current.status;
-        if (current.role === 'admin' && current.status === 'active' && (nextRole !== 'admin' || nextStatus !== 'active')) {
-          const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'admin'), eq(users.status, 'active')));
-          if (admins.length <= 1) throw new AppError(409, 'FORBIDDEN', '必须保留至少一个有效管理员');
+        if (current.role === 'super' && current.status === 'active' && (nextRole !== 'super' || nextStatus !== 'active')) {
+          const superUsers = await tx.select({ id: users.id }).from(users)
+            .where(and(eq(users.role, 'super'), eq(users.status, 'active')));
+          if (superUsers.length <= 1) throw new AppError(409, 'FORBIDDEN', '必须保留至少一个有效超级管理员');
         }
         await tx.update(users).set({
           role: nextRole, status: nextStatus, authVersion: sql`${users.authVersion} + 1`, updatedAt: store.now(),

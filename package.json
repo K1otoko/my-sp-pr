@@ -8,6 +8,7 @@
   "scripts": {
     "generate:api": "tsx scripts/generate-api.ts",
     "watch:api": "tsx scripts/watch-api.ts",
+    "deploy:validate": "node scripts/deploy/validate-manifest.mjs",
     "dev": "pnpm generate:api && pnpm build:database && concurrently --kill-others --names gateway,chat-api,auth-api,admin-api,chat-web,admin-web,sso-web,codegen,database \"pnpm --filter @my-sp-pr/gateway dev\" \"pnpm --filter @my-sp-pr/pr-chat-api dev\" \"pnpm --filter @my-sp-pr/pr-auth-api dev\" \"pnpm --filter @my-sp-pr/pr-admin-api dev\" \"pnpm --filter @my-sp-pr/pr-chat-web dev\" \"pnpm --filter @my-sp-pr/pr-admin-web dev\" \"pnpm --filter @my-sp-pr/pr-sso-web dev\" \"pnpm watch:api --skip-initial\" \"pnpm --filter @my-sp-pr/database dev\"",
     "dev:frontend": "pnpm generate:api && concurrently --kill-others --names chat,admin,sso,codegen \"pnpm --filter @my-sp-pr/pr-chat-web dev\" \"pnpm --filter @my-sp-pr/pr-admin-web dev\" \"pnpm --filter @my-sp-pr/pr-sso-web dev\" \"pnpm watch:api --skip-initial\"",
     "dev:backend": "pnpm generate:api && pnpm build:database && concurrently --kill-others --names gateway,chat,auth,admin,codegen,database \"pnpm --filter @my-sp-pr/gateway dev\" \"pnpm --filter @my-sp-pr/pr-chat-api dev\" \"pnpm --filter @my-sp-pr/pr-auth-api dev\" \"pnpm --filter @my-sp-pr/pr-admin-api dev\" \"pnpm watch:api --skip-initial\" \"pnpm --filter @my-sp-pr/database dev\"",
@@ -18,6 +19,7 @@
     "db:migrate": "pnpm build:database && pnpm --filter @my-sp-pr/pr-auth-api db:migrate && pnpm --filter @my-sp-pr/pr-chat-api db:migrate && pnpm --filter @my-sp-pr/pr-admin-api db:migrate",
     "verify:database": "pnpm build:database && pnpm --filter @my-sp-pr/database verify",
     "verify:auth": "pnpm generate:api && pnpm build:database && pnpm --filter @my-sp-pr/pr-auth-api build && pnpm --filter @my-sp-pr/gateway build && tsx backend/database/scripts/verify-auth.ts",
+    "verify:admin": "pnpm generate:api && pnpm build:database && pnpm --filter @my-sp-pr/pr-admin-api build && tsx backend/database/scripts/verify-admin.ts",
     "build": "pnpm generate:api && pnpm typecheck:code && pnpm -r build",
     "start:backend": "concurrently --kill-others --names gateway,chat,auth,admin \"pnpm --filter @my-sp-pr/gateway start\" \"pnpm --filter @my-sp-pr/pr-chat-api start\" \"pnpm --filter @my-sp-pr/pr-auth-api start\" \"pnpm --filter @my-sp-pr/pr-admin-api start\"",
     "preview:frontend": "concurrently --kill-others --names chat,admin,sso \"pnpm --filter @my-sp-pr/pr-chat-web preview\" \"pnpm --filter @my-sp-pr/pr-admin-web preview\" \"pnpm --filter @my-sp-pr/pr-sso-web preview\"",

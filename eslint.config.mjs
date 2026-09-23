@@ -24,7 +24,7 @@ export default defineConfig([
     languageOptions: { sourceType: 'commonjs', globals: globals.node },
   },
   {
-    files: ['backend/**/*.ts', 'scripts/*.{ts,mjs}', '*.mjs', 'frontend/*/vite.config.ts'],
+    files: ['backend/**/*.ts', 'scripts/**/*.{ts,mjs}', '*.mjs', 'frontend/*/vite.config.ts'],
     languageOptions: { globals: globals.node },
   },
   {

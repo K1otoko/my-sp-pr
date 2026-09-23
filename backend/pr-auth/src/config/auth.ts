@@ -53,7 +53,7 @@ export function loadAuthConfig(source: NodeJS.ProcessEnv) {
     clientId: 'pr-sso-portal', name: '统一登录', secret: parsed.portalSecret,
     redirectUris: [`${originValue}/api/auth/portal/callback`],
     postLogoutRedirectUris: [`${originValue}/?signed_out=1`],
-    allowedRoles: ['admin', 'user'], scopes: ['openid', 'profile', 'roles'], refreshToken: false,
+    allowedRoles: ['super', 'admin', 'user'], scopes: ['openid', 'profile', 'roles'], refreshToken: false,
   }, ...parsed.clients];
   if (new Set(clients.map((client) => client.clientId)).size !== clients.length
     || clients.some((client) => !client.scopes.includes('openid'))

@@ -110,7 +110,13 @@
           "FORBIDDEN",
           "RATE_LIMITED",
           "AUTH_FLOW_INVALID",
-          "AUTH_UNAVAILABLE"
+          "AUTH_UNAVAILABLE",
+          "CONFIGURATION_INCOMPLETE",
+          "DEPLOYMENT_CONFLICT",
+          "GITHUB_UNAVAILABLE",
+          "MANIFEST_INVALID",
+          "REF_NOT_ALLOWED",
+          "WEBHOOK_INVALID"
         ]
       },
       "ReadinessResponse": {
@@ -310,6 +316,7 @@
       "AuthRole": {
         "type": "string",
         "enum": [
+          "super",
           "admin",
           "user"
         ]

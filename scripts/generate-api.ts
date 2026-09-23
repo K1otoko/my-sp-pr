@@ -135,7 +135,7 @@ function documentFor(selected: typeof entries, title: string, publicView: boolea
   for (const { service, endpoint } of selected) {
     const { exposure, clients, ...definition } = endpoint as typeof endpoint & Operation;
     if (publicView && exposure !== 'public') throw new Error('内部接口不能进入公开文档');
-    if (clients.some((client) => !clientIds.includes(client))) throw new Error('未知的前端消费者');
+    if (clients.some((client: ClientId) => !clientIds.includes(client))) throw new Error('未知的前端消费者');
     registry.registerPath({
       ...definition,
       path: operationPath(service, endpoint),

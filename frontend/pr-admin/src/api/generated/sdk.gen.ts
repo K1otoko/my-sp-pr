@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetAdminHealthData, GetAdminHealthErrors, GetAdminHealthResponses, GetGatewayHealthData, GetGatewayHealthErrors, GetGatewayHealthResponses } from './types.gen';
+import type { CreateDeployEnvironmentData, CreateDeployEnvironmentErrors, CreateDeployEnvironmentResponses, CreateDeploymentData, CreateDeploymentErrors, CreateDeploymentResponses, GetAdminAuthSessionData, GetAdminAuthSessionErrors, GetAdminAuthSessionResponses, GetAdminHealthData, GetAdminHealthErrors, GetAdminHealthResponses, GetDeployEnvironmentConfigurationData, GetDeployEnvironmentConfigurationErrors, GetDeployEnvironmentConfigurationResponses, GetDeploymentData, GetDeploymentErrors, GetDeploymentResponses, GetDeployProjectData, GetDeployProjectErrors, GetDeployProjectResponses, GetGatewayHealthData, GetGatewayHealthErrors, GetGatewayHealthResponses, ListDeployEnvironmentsData, ListDeployEnvironmentsErrors, ListDeployEnvironmentsResponses, ListDeploymentsData, ListDeploymentsErrors, ListDeploymentsResponses, ListDeployProjectsData, ListDeployProjectsErrors, ListDeployProjectsResponses, ListDeployRefsData, ListDeployRefsErrors, ListDeployRefsResponses, RollbackDeploymentData, RollbackDeploymentErrors, RollbackDeploymentResponses, StartAdminAuthLogoutData, StartAdminAuthLogoutErrors, StartAdminAuthLogoutResponses, SyncDeployProjectsData, SyncDeployProjectsErrors, SyncDeployProjectsResponses, UpdateDeployEnvironmentData, UpdateDeployEnvironmentErrors, UpdateDeployEnvironmentResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -27,3 +27,115 @@ export const getGatewayHealth = <ThrowOnError extends boolean = false>(options?:
  * 查询服务健康状态
  */
 export const getAdminHealth = <ThrowOnError extends boolean = false>(options?: Options<GetAdminHealthData, ThrowOnError>): RequestResult<GetAdminHealthResponses, GetAdminHealthErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminHealthResponses, GetAdminHealthErrors, ThrowOnError>({ url: '/admin/health', ...options });
+
+/**
+ * 读取管理平台登录状态
+ */
+export const getAdminAuthSession = <ThrowOnError extends boolean = false>(options?: Options<GetAdminAuthSessionData, ThrowOnError>): RequestResult<GetAdminAuthSessionResponses, GetAdminAuthSessionErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminAuthSessionResponses, GetAdminAuthSessionErrors, ThrowOnError>({ url: '/admin/auth/session', ...options });
+
+/**
+ * 退出管理平台并开始统一退出
+ */
+export const startAdminAuthLogout = <ThrowOnError extends boolean = false>(options: Options<StartAdminAuthLogoutData, ThrowOnError>): RequestResult<StartAdminAuthLogoutResponses, StartAdminAuthLogoutErrors, ThrowOnError> => (options.client ?? client).post<StartAdminAuthLogoutResponses, StartAdminAuthLogoutErrors, ThrowOnError>({
+    url: '/admin/auth/logout',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 查询可发布项目
+ */
+export const listDeployProjects = <ThrowOnError extends boolean = false>(options?: Options<ListDeployProjectsData, ThrowOnError>): RequestResult<ListDeployProjectsResponses, ListDeployProjectsErrors, ThrowOnError> => (options?.client ?? client).get<ListDeployProjectsResponses, ListDeployProjectsErrors, ThrowOnError>({ url: '/admin/deploy/projects', ...options });
+
+/**
+ * 查询发布项目详情
+ */
+export const getDeployProject = <ThrowOnError extends boolean = false>(options: Options<GetDeployProjectData, ThrowOnError>): RequestResult<GetDeployProjectResponses, GetDeployProjectErrors, ThrowOnError> => (options.client ?? client).get<GetDeployProjectResponses, GetDeployProjectErrors, ThrowOnError>({ url: '/admin/deploy/projects/{projectId}', ...options });
+
+/**
+ * 从默认分支同步发布清单
+ */
+export const syncDeployProjects = <ThrowOnError extends boolean = false>(options: Options<SyncDeployProjectsData, ThrowOnError>): RequestResult<SyncDeployProjectsResponses, SyncDeployProjectsErrors, ThrowOnError> => (options.client ?? client).post<SyncDeployProjectsResponses, SyncDeployProjectsErrors, ThrowOnError>({
+    url: '/admin/deploy/projects/sync',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 查询项目发布环境
+ */
+export const listDeployEnvironments = <ThrowOnError extends boolean = false>(options: Options<ListDeployEnvironmentsData, ThrowOnError>): RequestResult<ListDeployEnvironmentsResponses, ListDeployEnvironmentsErrors, ThrowOnError> => (options.client ?? client).get<ListDeployEnvironmentsResponses, ListDeployEnvironmentsErrors, ThrowOnError>({ url: '/admin/deploy/projects/{projectId}/environments', ...options });
+
+/**
+ * 创建项目发布环境
+ */
+export const createDeployEnvironment = <ThrowOnError extends boolean = false>(options: Options<CreateDeployEnvironmentData, ThrowOnError>): RequestResult<CreateDeployEnvironmentResponses, CreateDeployEnvironmentErrors, ThrowOnError> => (options.client ?? client).post<CreateDeployEnvironmentResponses, CreateDeployEnvironmentErrors, ThrowOnError>({
+    url: '/admin/deploy/projects/{projectId}/environments',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 更新项目发布环境
+ */
+export const updateDeployEnvironment = <ThrowOnError extends boolean = false>(options: Options<UpdateDeployEnvironmentData, ThrowOnError>): RequestResult<UpdateDeployEnvironmentResponses, UpdateDeployEnvironmentErrors, ThrowOnError> => (options.client ?? client).patch<UpdateDeployEnvironmentResponses, UpdateDeployEnvironmentErrors, ThrowOnError>({
+    url: '/admin/deploy/environments/{environmentId}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 检查项目环境配置
+ */
+export const getDeployEnvironmentConfiguration = <ThrowOnError extends boolean = false>(options: Options<GetDeployEnvironmentConfigurationData, ThrowOnError>): RequestResult<GetDeployEnvironmentConfigurationResponses, GetDeployEnvironmentConfigurationErrors, ThrowOnError> => (options.client ?? client).get<GetDeployEnvironmentConfigurationResponses, GetDeployEnvironmentConfigurationErrors, ThrowOnError>({ url: '/admin/deploy/environments/{environmentId}/configuration', ...options });
+
+/**
+ * 查询可选择的 Git refs
+ */
+export const listDeployRefs = <ThrowOnError extends boolean = false>(options: Options<ListDeployRefsData, ThrowOnError>): RequestResult<ListDeployRefsResponses, ListDeployRefsErrors, ThrowOnError> => (options.client ?? client).get<ListDeployRefsResponses, ListDeployRefsErrors, ThrowOnError>({ url: '/admin/deploy/projects/{projectId}/refs', ...options });
+
+/**
+ * 查询发布记录
+ */
+export const listDeployments = <ThrowOnError extends boolean = false>(options?: Options<ListDeploymentsData, ThrowOnError>): RequestResult<ListDeploymentsResponses, ListDeploymentsErrors, ThrowOnError> => (options?.client ?? client).get<ListDeploymentsResponses, ListDeploymentsErrors, ThrowOnError>({ url: '/admin/deploy/deployments', ...options });
+
+/**
+ * 查询发布详情
+ */
+export const getDeployment = <ThrowOnError extends boolean = false>(options: Options<GetDeploymentData, ThrowOnError>): RequestResult<GetDeploymentResponses, GetDeploymentErrors, ThrowOnError> => (options.client ?? client).get<GetDeploymentResponses, GetDeploymentErrors, ThrowOnError>({ url: '/admin/deploy/deployments/{deploymentId}', ...options });
+
+/**
+ * 创建项目发布
+ */
+export const createDeployment = <ThrowOnError extends boolean = false>(options: Options<CreateDeploymentData, ThrowOnError>): RequestResult<CreateDeploymentResponses, CreateDeploymentErrors, ThrowOnError> => (options.client ?? client).post<CreateDeploymentResponses, CreateDeploymentErrors, ThrowOnError>({
+    url: '/admin/deploy/projects/{projectId}/deployments',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 回滚到指定发布的应用制品
+ */
+export const rollbackDeployment = <ThrowOnError extends boolean = false>(options: Options<RollbackDeploymentData, ThrowOnError>): RequestResult<RollbackDeploymentResponses, RollbackDeploymentErrors, ThrowOnError> => (options.client ?? client).post<RollbackDeploymentResponses, RollbackDeploymentErrors, ThrowOnError>({
+    url: '/admin/deploy/deployments/{deploymentId}/rollback',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});

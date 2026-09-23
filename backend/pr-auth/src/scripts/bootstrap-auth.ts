@@ -11,7 +11,7 @@ try {
   await database.checkReady();
   const config = loadAuthConfig(process.env);
   await accountService(createAuthStore(db, config.crypto)).bootstrap(username, await readPassword());
-  console.log('[pr-auth] 首个管理员已创建。');
+  console.log('[pr-auth] 首个超级管理员已创建。');
 } catch (error) {
   console.error('[pr-auth] 初始化失败：', error instanceof AppError ? error.message : '请检查身份配置、数据库和迁移状态');
   process.exitCode = 1;

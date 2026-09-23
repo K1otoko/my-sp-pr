@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "units": [
+    {
+      "id": "pr-chat-web",
+      "name": "PR Chat Web",
+      "kind": "frontend",
+      "preset": "pnpm-vite-static-v1",
+      "packageName": "@my-sp-pr/pr-chat-web",
+      "packagePath": "frontend/pr-chat",
+      "artifactPath": "frontend/pr-chat/dist",
+      "defaultRef": "main",
+      "migration": false,
+      "healthPath": "/release.json",
+      "variables": [
+        {
+          "name": "VITE_API_BASE_URL",
+          "scope": "build",
+          "required": false,
+          "sensitive": false,
+          "description": "浏览器 Gateway API 前缀，默认 /api"
+        }
+      ]
+    },
+    {
+      "id": "pr-admin-web",
+      "name": "PR Admin Web",
+      "kind": "frontend",
+      "preset": "pnpm-vite-static-v1",
+      "packageName": "@my-sp-pr/pr-admin-web",
+      "packagePath": "frontend/pr-admin",
+      "artifactPath": "frontend/pr-admin/dist",
+      "defaultRef": "main",
+      "migration": false,
+      "healthPath": "/release.json",
+      "variables": []
+    },
+    {
+      "id": "pr-sso-web",
+      "name": "PR SSO Web",
+      "kind": "frontend",
+      "preset": "pnpm-vite-static-v1",
+      "packageName": "@my-sp-pr/pr-sso-web",
+      "packagePath": "frontend/pr-sso",
+      "artifactPath": "frontend/pr-sso/dist",
+      "defaultRef": "main",
+      "migration": false,
+      "healthPath": "/release.json",
+      "variables": []
+    },
+    {
+      "id": "gateway",
+      "name": "Gateway",
+      "kind": "service",
+      "preset": "pnpm-node-service-v1",
+      "packageName": "@my-sp-pr/gateway",
+      "packagePath": "backend/gateway",
+      "artifactPath": "backend/gateway",
+      "defaultRef": "main",
+      "migration": false,
+      "healthPath": "/api/health",
+      "variables": [
+        { "name": "HOST", "scope": "runtime", "required": true, "sensitive": false, "description": "Gateway 监听地址" },
+        { "name": "PORT", "scope": "runtime", "required": true, "sensitive": false, "description": "Gateway 监听端口" },
+        { "name": "CHAT_SERVICE_URL", "scope": "runtime", "required": true, "sensitive": false, "description": "Chat API 私网 Origin" },
+        { "name": "AUTH_SERVICE_URL", "scope": "runtime", "required": true, "sensitive": false, "description": "Auth API 私网 Origin" },
+        { "name": "ADMIN_SERVICE_URL", "scope": "runtime", "required": true, "sensitive": false, "description": "Admin API 私网 Origin" },
+        { "name": "CORS_ORIGINS", "scope": "runtime", "required": true, "sensitive": false, "description": "浏览器 Origin 白名单" },
+        { "name": "SSO_PUBLIC_ORIGIN", "scope": "runtime", "required": true, "sensitive": false, "description": "稳定 SSO HTTPS Origin" },
+        { "name": "TRUSTED_PROXY_CIDRS", "scope": "runtime", "required": true, "sensitive": false, "description": "可信入口代理 CIDR" },
+        { "name": "UPSTREAM_TIMEOUT_MS", "scope": "runtime", "required": false, "sensitive": false, "description": "普通上游请求超时" },
+        { "name": "AUTH_FLOW_TIMEOUT_MS", "scope": "runtime", "required": false, "sensitive": false, "description": "登录回调请求超时" }
+      ]
+    },
+    {
+      "id": "pr-chat-api",
+      "name": "PR Chat API",
+      "kind": "service",
+      "preset": "pnpm-node-service-v1",
+      "packageName": "@my-sp-pr/pr-chat-api",
+      "packagePath": "backend/pr-chat",
+      "artifactPath": "backend/pr-chat",
+      "defaultRef": "main",
+      "migration": true,
+      "healthPath": "/api/chat/health",
+      "internalReadyPath": "/api/chat/ready",
+      "variables": [
+        { "name": "HOST", "scope": "runtime", "required": true, "sensitive": false, "description": "服务监听地址" },
+        { "name": "PORT", "scope": "runtime", "required": true, "sensitive": false, "description": "服务监听端口" },
+        { "name": "DATABASE_URL", "scope": "runtime", "required": true, "sensitive": true, "description": "Chat 应用数据库连接" },
+        { "name": "DATABASE_SSL_MODE", "scope": "runtime", "required": true, "sensitive": false, "description": "数据库 TLS 模式" },
+        { "name": "DATABASE_SSL_CA_FILE", "scope": "runtime", "required": false, "sensitive": false, "description": "数据库 CA 文件绝对路径" },
+        { "name": "DATABASE_POOL_MAX", "scope": "runtime", "required": false, "sensitive": false, "description": "数据库连接池上限" },
+        { "name": "DATABASE_MIGRATION_URL", "scope": "migration", "required": true, "sensitive": true, "description": "Chat 迁移账号连接" }
+      ]
+    },
+    {
+      "id": "pr-auth-api",
+      "name": "PR Auth API",
+      "kind": "service",
+      "preset": "pnpm-node-service-v1",
+      "packageName": "@my-sp-pr/pr-auth-api",
+      "packagePath": "backend/pr-auth",
+      "artifactPath": "backend/pr-auth",
+      "defaultRef": "main",
+      "migration": true,
+      "healthPath": "/api/auth/health",
+      "internalReadyPath": "/api/auth/ready",
+      "variables": [
+        { "name": "HOST", "scope": "runtime", "required": true, "sensitive": false, "description": "服务监听地址" },
+        { "name": "PORT", "scope": "runtime", "required": true, "sensitive": false, "description": "服务监听端口" },
+        { "name": "SSO_PUBLIC_ORIGIN", "scope": "runtime", "required": true, "sensitive": false, "description": "稳定 SSO HTTPS Origin" },
+        { "name": "AUTH_CONFIG_FILE", "scope": "runtime", "required": true, "sensitive": false, "description": "目标机 auth.json 绝对路径" },
+        { "name": "AUTH_TRUSTED_GATEWAY_CIDRS", "scope": "runtime", "required": true, "sensitive": false, "description": "可信 Gateway CIDR" },
+        { "name": "DATABASE_URL", "scope": "runtime", "required": true, "sensitive": true, "description": "Auth 应用数据库连接" },
+        { "name": "DATABASE_SSL_MODE", "scope": "runtime", "required": true, "sensitive": false, "description": "数据库 TLS 模式" },
+        { "name": "DATABASE_SSL_CA_FILE", "scope": "runtime", "required": false, "sensitive": false, "description": "数据库 CA 文件绝对路径" },
+        { "name": "DATABASE_POOL_MAX", "scope": "runtime", "required": false, "sensitive": false, "description": "数据库连接池上限" },
+        { "name": "DATABASE_MIGRATION_URL", "scope": "migration", "required": true, "sensitive": true, "description": "Auth 迁移账号连接" }
+      ]
+    },
+    {
+      "id": "pr-admin-api",
+      "name": "PR Admin API",
+      "kind": "service",
+      "preset": "pnpm-node-service-v1",
+      "packageName": "@my-sp-pr/pr-admin-api",
+      "packagePath": "backend/pr-admin",
+      "artifactPath": "backend/pr-admin",
+      "defaultRef": "main",
+      "migration": true,
+      "healthPath": "/api/admin/health",
+      "internalReadyPath": "/api/admin/ready",
+      "variables": [
+        { "name": "HOST", "scope": "runtime", "required": true, "sensitive": false, "description": "服务监听地址" },
+        { "name": "PORT", "scope": "runtime", "required": true, "sensitive": false, "description": "服务监听端口" },
+        { "name": "ADMIN_PUBLIC_ORIGIN", "scope": "runtime", "required": true, "sensitive": false, "description": "Admin HTTPS Origin" },
+        { "name": "SSO_PUBLIC_ORIGIN", "scope": "runtime", "required": true, "sensitive": false, "description": "稳定 SSO HTTPS Origin" },
+        { "name": "ADMIN_OIDC_CLIENT_ID", "scope": "runtime", "required": true, "sensitive": false, "description": "Admin OIDC client ID" },
+        { "name": "ADMIN_OIDC_CLIENT_SECRET", "scope": "runtime", "required": true, "sensitive": true, "description": "Admin OIDC client secret" },
+        { "name": "ADMIN_TOKEN_ENCRYPTION_KEYS", "scope": "runtime", "required": true, "sensitive": true, "description": "Admin token 加密 key ring" },
+        { "name": "ADMIN_CSRF_HMAC_KEY", "scope": "runtime", "required": true, "sensitive": true, "description": "Admin CSRF HMAC key" },
+        { "name": "GITHUB_APP_ID", "scope": "runtime", "required": true, "sensitive": false, "description": "GitHub App ID" },
+        { "name": "GITHUB_APP_PRIVATE_KEY_FILE", "scope": "runtime", "required": true, "sensitive": false, "description": "目标机 GitHub App 私钥绝对路径" },
+        { "name": "GITHUB_INSTALLATION_ID", "scope": "runtime", "required": true, "sensitive": false, "description": "GitHub App installation ID" },
+        { "name": "GITHUB_REPOSITORY", "scope": "runtime", "required": true, "sensitive": false, "description": "受控 owner/repository" },
+        { "name": "GITHUB_ALLOWED_OWNERS", "scope": "runtime", "required": true, "sensitive": false, "description": "GitHub owner 白名单" },
+        { "name": "GITHUB_RUNNER_TARGETS", "scope": "runtime", "required": true, "sensitive": false, "description": "Runner target 白名单" },
+        { "name": "GITHUB_WEBHOOK_SECRET", "scope": "runtime", "required": true, "sensitive": true, "description": "GitHub webhook HMAC secret" },
+        { "name": "DATABASE_URL", "scope": "runtime", "required": true, "sensitive": true, "description": "Admin 应用数据库连接" },
+        { "name": "DATABASE_SSL_MODE", "scope": "runtime", "required": true, "sensitive": false, "description": "数据库 TLS 模式" },
+        { "name": "DATABASE_SSL_CA_FILE", "scope": "runtime", "required": false, "sensitive": false, "description": "数据库 CA 文件绝对路径" },
+        { "name": "DATABASE_POOL_MAX", "scope": "runtime", "required": false, "sensitive": false, "description": "数据库连接池上限" },
+        { "name": "DATABASE_MIGRATION_URL", "scope": "migration", "required": true, "sensitive": true, "description": "Admin 迁移账号连接" }
+      ]
+    }
+  ]
+}
