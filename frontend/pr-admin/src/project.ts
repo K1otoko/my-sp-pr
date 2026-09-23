@@ -1,4 +1,5 @@
 export const project = {
+  id: 'pr-admin',
   name: 'PR Admin',
   role: '管理平台',
   title: '管理工作，从这里开始。',

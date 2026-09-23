@@ -1,4 +1,5 @@
 export const project = {
+  id: 'pr-chat',
   name: 'PR Chat',
   role: '客户端',
   title: '从这里，开始连接。',

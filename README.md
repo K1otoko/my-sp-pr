@@ -1,8 +1,8 @@
 # my-sp-pr
 
-React 19 + Vite + Express 5 + Node.js 24 的 pnpm workspace。包含三个前端、四个后端、契约包和数据库包，前端统一通过 Gateway 访问 API。
+React 19 + Ant Design 6 + Vite + Express 5 + Node.js 24 的 pnpm workspace。包含三个前端、四个后端、契约包和数据库包，前端统一通过 Gateway 访问 API。
 
-当前提供可运行骨架、真实健康检查及 PostgreSQL 18 + Drizzle 基础设施；登录、账号、权限、聊天、管理业务和业务表尚未实现。
+当前提供真实健康检查、PostgreSQL 18 + Drizzle，以及基于 oidc-provider 的 SSO：用户名密码登录、持久化中央会话、两角色准入和当前浏览器退出。Chat/Admin 尚未接入登录，注册、账号管理、系统设置和业务权限页面后续单独实现。
 
 ## 快速开始
 
@@ -10,12 +10,15 @@ React 19 + Vite + Express 5 + Node.js 24 的 pnpm workspace。包含三个前端
 
 ```sh
 pnpm install
+pnpm generate:api
 pnpm db:bootstrap # 首次空库初始化；先按下方说明配置管理员 URL
 pnpm db:migrate
+pnpm --filter @my-sp-pr/pr-auth-api auth:keys
+pnpm --filter @my-sp-pr/pr-auth-api auth:bootstrap owner
 pnpm dev
 ```
 
-三个业务后端必须配置各自 `.env` 并完成数据库迁移；已初始化的数据库跳过 bootstrap。根开发命令先生成接口、编译数据库包，再启动七个应用、契约监听和数据库包编译监听；`Ctrl+C` 关闭全部子进程。前端与 Gateway 可独立启动。
+三个业务后端必须配置各自 `.env` 并完成数据库迁移；已初始化的数据库跳过 db:bootstrap。已有身份配置/用户跳过 auth:keys/auth:bootstrap，前者不覆盖已有文件，后者只允许空用户库。管理员密码在终端隐藏输入，15–128 字符。根开发命令先生成接口、编译数据库包，再启动七个应用、契约监听和数据库包编译监听；`Ctrl+C` 关闭全部子进程。
 
 | 项目路径 | 包名 | 开发端口 | 预览端口 | 健康接口 |
 | --- | --- | --- | --- | --- |
@@ -37,7 +40,7 @@ pnpm dev
 frontend/
   pr-chat/                 # 客户端
   pr-admin/                # 管理平台
-  pr-sso/                  # 登录系统骨架
+  pr-sso/                  # 专用登录、状态和退出页面
 backend/
   contracts/src/           # *.contract.ts 分服务维护，shared.ts 共享，contract.ts 聚合
   database/                # PG Pool、Drizzle、配置、迁移、初始化与集成验证
@@ -53,6 +56,25 @@ scripts/
 ```
 
 各前端保留页面、布局、`hooks/useHealth.ts`、`api/client.ts` 和 `api/generated/`。各后端保留 `routes`、`controllers`、`services`、`middlewares`、`config` 分层，以及自己的 `dist/`、`generated/openapi.json`。三个业务服务独立维护 `src/db/schema/`、`drizzle.config.ts` 和版本管理中的 `drizzle/` 迁移。
+
+## 前端组件与主题
+
+三个前端使用 Ant Design 6，采用蓝灰配色；SSO 仅保留登录、状态、退出、错误和 404 页面。后续基础 UI 优先使用 Antd 组件，Tailwind CSS 用于布局、间距与响应式。完整设计约定见 [AGENTS.md](AGENTS.md#ui-组件与主题设计规范)。
+
+顶栏提供“浅色 / 深色 / 跟随系统”，默认跟随系统。各应用将偏好保存在独立的 `my-sp-pr:pr-chat:theme`、`my-sp-pr:pr-admin:theme`、`my-sp-pr:pr-sso:theme` 键中，同应用同源标签页同步；不做跨域或账号同步。手动选择不受系统变化影响；非法值或删除偏好回到系统，存储不可用时仍可在当前标签页切换。
+
+各前端独立维护以下文件，不跨应用导入 UI 源码：
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/theme/config.ts` | 主色 `#1677FF`、深浅背景及 Antd 默认/暗色算法 |
+| `src/theme/ThemeProvider.tsx` | 中文语言、Antd App 上下文、CSS Token 和样式层级 |
+| `src/theme/theme-store.ts`、`src/hooks/useTheme.ts` | 偏好持久化、系统变化、标签同步与减少动画订阅 |
+| `src/components/ThemeSwitcher.tsx` | 三态主题菜单 |
+| `index.html` | 加载应用前设置主题背景，避免深色首屏闪烁 |
+| `src/styles/index.css` | Tailwind 与 Antd 层级、页面语义样式及减少动画 |
+
+浅色页面背景 `#F5F5F5`、内容及浮层 `#FFFFFF`；深色页面背景 `#141414`、内容及浮层 `#1F1F1F`。其他颜色由 Antd Token 派生，辅助文字、链接、选中态和主按钮在统一主题中选择更清晰的算法色阶。修改背景或 `project.id` 时同步首屏脚本；新增消息、通知与确认框使用 `App.useApp()` 以继承主题。主题切换保留页面状态，健康检查仍请求真实 Gateway 与对应服务。
 
 ## 命令
 
@@ -70,6 +92,7 @@ scripts/
 | `pnpm db:bootstrap` | 首次空库初始化账号并生成本地服务环境文件 |
 | `pnpm db:migrate` | 编译数据库包，按 auth → chat → admin 显式迁移 |
 | `pnpm verify:database` | 在临时 PG18 库运行集成验证，需管理员及服务凭据 |
+| `pnpm verify:auth` | 生成/构建身份服务与 Gateway，在独立临时库验证真实 OIDC 流程及并发 |
 | `pnpm build` | 先生成、检查类型，再按依赖顺序构建 |
 | `pnpm start:backend` | 并发运行四个已构建后端 |
 | `pnpm preview:frontend` | 在 4173/4174/4175 预览前端构建 |
@@ -124,7 +147,8 @@ return unwrapResponse(payload);
 请求参数沿用 Zod-to-OpenAPI 结构，例如 `request: { params: z.object(...), query: z.object(...), body: { required: true, content: { 'application/json': { schema } } } }`。相应服务控制器负责实际校验，生成器不生成业务处理逻辑。
 
 - `exposure: 'public'` 的操作进入 Gateway；`internal` 操作的 `clients` 必须为空，只保留在下游文档与下游路由。
-- `clients` 只筛选 SDK 消费者，不构成权限控制。当前每份 SDK 包含 Gateway 健康操作和对应下游健康操作。
+- `clients` 只筛选 SDK 消费者，不构成权限控制。每份 SDK 包含健康操作；SSO SDK 另含交互、会话、退出 JSON 操作。
+- OIDC 协议路由集中在 `auth-oidc.ts`，由 discovery 描述，不生成普通 JSON SDK；包含两个根目录 discovery 和 `/api/auth/oidc/*` 中精确声明的方法/路径。标准表单、重定向和 OAuth 错误保持协议格式。
 - Gateway OpenAPI 汇总全部公开操作，下游 OpenAPI 包含自身全部操作。所有文档 `servers` 为 `/api`，paths 自带 `/chat`、`/auth`、`/admin` 命名空间。
 - Gateway 公开文档与 SDK 增加跨域 403，被代理操作再增加 502/504。
 - 所有 `generated/` 与契约 `dist/` 均自动生成，不手工修改。SDK、OpenAPI 与源契约一起纳入版本管理，dist 是构建产物。
@@ -175,7 +199,7 @@ pnpm --filter @my-sp-pr/pr-auth-api db:migrate
 
 chat/admin 替换包名。Kit 命令固定从仓库根执行；0.31 读取快照不兼容绝对 out，所以 out 使用根相对路径。`db:check` 只校验迁移元数据，不检查远端漂移。自定义 SQL 用 `db:generate --custom --name=...` 创建容器；journal/snapshot 由 Kit 生成。已执行迁移不可修改，新增迁移修复；不使用 push、自动 reset/down 或启动时迁移。根串行迁移不是跨服务事务。Drizzle 在事务内应用待执行 SQL/记录，首次创建迁移历史结构可能在事务外。
 
-服务首次真实探测检查 PG18、数据库名、运行角色和 Schema 权限；失败不监听 HTTP。运行中失败保留进程，内部 `/api/auth/ready`、`/api/chat/ready`、`/api/admin/ready` 返回 503 `DATABASE_NOT_READY`，恢复后下一次检查返回 200。响应 `Cache-Control: no-store`。原 health 仅检查存活，数据库失败时仍可 200；Gateway 对 ready 始终 404，前端无 readiness SDK。readiness 不代替迁移版本检查。
+服务首次真实探测检查 PG18、数据库名、运行角色和 Schema 权限；pr-auth 还检查身份配置及七张身份表的列/访问权限，失败不监听 HTTP。运行中数据库失败保留进程，内部 ready 返回 503 `DATABASE_NOT_READY`，恢复后下一次检查返回 200。原 health 仅检查存活，数据库失败时仍可 200；Gateway 对 ready 始终 404，前端无 readiness SDK。ready 不读取迁移历史，完整迁移仍须显式执行。
 
 退出时先停止 HTTP 并等待在途请求，再关闭 Pool，10 秒超时强制退出；PM2 `kill_timeout` 为 12 秒。SIGINT/SIGTERM、重复信号、启动中信号及端口冲突均走清理流程。
 
@@ -192,7 +216,7 @@ Gateway `/api/health` 只表示网关自身可响应。停止某个下游时，�
 - 普通请求默认总代理期限 8 秒，同时设置代理空闲超时；前端超时 10 秒。失败由用户点击重试，不无限重试。
 - 连接/DNS/上游断开返回 502；总代理期限到达返回 504。客户端断连时取消上游。已开始的响应发生故障时关闭连接，不追加 JSON。
 - 网关覆盖外部 `X-Request-Id`，生成 UUID 并传递给下游；响应暴露该头。下游复用合法 UUID，直连时可生成本地 ID。
-- 清除外部 `X-User-Id`、`X-Roles`、`X-Permissions`。当前不产生登录身份。访问日志仅含请求 ID、服务、方法、无 query 路径、状态、耗时和错误类别。
+- 清除外部 `X-User-Id`、`X-Roles`、`X-Permissions`、Forwarded 和 X-Forwarded-*。Gateway 不产生登录身份；向 pr-auth 重建固定 issuer 的 Host/proto 和可信 IP。访问日志不记录凭证或 query。
 - 仅 Gateway 管理 CORS；下游默认绑定 `127.0.0.1`。跨容器部署可设置 `HOST=0.0.0.0`，同时通过私网与防火墙控制访问。CORS 不替代身份鉴权或网络隔离。
 
 健康响应示例：
@@ -205,7 +229,7 @@ Gateway `/api/health` 只表示网关自身可响应。停止某个下游时，�
 
 ## 环境变量
 
-前端各自读取应用目录 `.env`。`VITE_API_BASE_URL` 默认 `/api`，生产可统一设置为 `https://api.example.com/api`；此值在构建时写入静态资源，不能存放密钥。
+Chat/Admin 的 `VITE_API_BASE_URL` 默认 `/api`，生产可设为 `https://api.example.com/api`；此值进入静态资源，不能存放密钥。SSO 的 Cookie API 固定同源 `/api`，生产登录站点必须反代 Gateway，不能改为跨域 API。
 
 后端使用 Node 24 原生 `.env` 加载，路径与当前 shell 目录无关，进程环境变量优先。
 
@@ -219,10 +243,14 @@ Gateway `/api/health` 只表示网关自身可响应。停止某个下游时，�
 | ADMIN_SERVICE_URL | http://127.0.0.1:3003 | 不使用 |
 | UPSTREAM_TIMEOUT_MS | 8000（1–9999） | 不使用 |
 | CORS_ORIGINS | http://localhost:5173,http://localhost:5174,http://localhost:5175 | 不使用 |
+| SSO_PUBLIC_ORIGIN | http://localhost:5175 | pr-auth 同值；生产必须 HTTPS |
+| TRUSTED_PROXY_CIDRS | 空，不信任外部代理头 | 不使用 |
+| AUTH_TRUSTED_GATEWAY_CIDRS | 不使用 | pr-auth 默认 loopback |
+| AUTH_CONFIG_FILE | 不使用 | pr-auth 默认 .deploy/auth.json，0600 |
 
-Gateway 在生产环境必须显式设置三个上游和 CORS 白名单。Origin 仅接受 HTTP/HTTPS，不含凭据、路径、query、hash 或末尾斜杠。上游不得指向已知的网关自身地址；部署时也需排除 DNS 别名或负载均衡导致的自环。
+Gateway 在生产环境必须显式设置三个上游、CORS 白名单和 SSO_PUBLIC_ORIGIN。Origin 不含凭据、路径、query、hash 或末尾斜杠。上游不得指向已知的网关自身地址；部署时也需排除 DNS 别名或负载均衡导致的自环。
 
-修改下游端口时只同步 Gateway 的对应 `*_SERVICE_URL`，前端无需感知。使用 `127.0.0.1` 访问前端时，将对应 Origin 加入 Gateway 白名单。无 Origin 请求允许访问，支持 OPTIONS 预检，当前不启用 Cookie 跨域凭据。
+修改下游端口时只同步 Gateway 的对应 `*_SERVICE_URL`。SSO 开发固定使用 localhost，与 issuer 完全一致。discovery/JWKS 可无凭证跨域 GET；授权/退出允许顶层导航，token/UserInfo/introspection/revoke 只由后端调用；SSO JSON 写操作严格检查同源和 CSRF。不全局启用跨域 Cookie。
 
 ## 构建与独立部署
 
@@ -247,29 +275,73 @@ NODE_ENV=production \
   CHAT_SERVICE_URL=http://127.0.0.1:3001 \
   AUTH_SERVICE_URL=http://127.0.0.1:3002 \
   ADMIN_SERVICE_URL=http://127.0.0.1:3003 \
+  SSO_PUBLIC_ORIGIN=https://sso.example.com \
   CORS_ORIGINS=https://chat.example.com,https://admin.example.com,https://sso.example.com \
   node .deploy/gateway/dist/server.js
 ```
 
 Gateway 的 HTTPS 入口可由部署平台或反向代理提供；不托管前端资源。下游不暴露公网端口。可在负载均衡后运行多个无会话状态的 Gateway 实例。
 
-本地生产联调（先停止开发服务释放端口）：
+SSO 本地日常联调使用 `pnpm dev` 的 localhost:5175；生产模式必须提供 HTTPS 入口。`vite preview` 仅用于本地静态资源验证，直接改变预览端口不能代替 issuer/同源反代配置。
+
+## SSO 配置、数据与权限
+
+身份服务使用 Authorization Code + PKCE S256，内置机密客户端 `pr-sso-portal` 支持直接打开 SSO。浏览器只持有 HttpOnly Cookie，不接收 client secret 或 OIDC token。SSO Origin 就是 issuer；登录页不能接受任意 returnUrl。
+
+中央登录最长 7 天、连续 24 小时无有效认证活动过期。退出撤销当前浏览器会话及关联授权，其他设备保留；重置密码、禁用和角色变化会撤销该用户全部设备。ID Token 5 分钟，仅用于登录验证；Access Token 为 5 分钟不透明值，当前用于 UserInfo。登记的测试/未来客户端可启用轮换刷新令牌，期限受中央会话约束。
+
+权限固定为 `user`（默认）和 `admin`，静态客户端通过 `allowedRoles` 控制准入，`roles` scope 返回角色。它不授予尚未实现的业务接口权限。管理员也不自动获得他人私人聊天数据。未来 Admin 管理账号和设置，须经受保护身份 API，不能写 auth 表；Chat/Admin 的本地会话、在线撤销检查及业务鉴权尚未接入。当前没有 back-channel logout，不会清除其他域的 Cookie。
+
+auth 的 `0002_sso_identity` 增量迁移创建七张表：users、auth_sessions、oidc_artifacts、browser_transactions、portal_sessions、login_rate_limits、auth_audit_logs。用户名规范化后唯一；密码为带随机盐的 scrypt 摘要。协议 payload 使用独立 AES-GCM key ring 加密，token 索引保存摘要。一次性消费、撤销和账号变更使用数据库事务锁，适合小规模部署；扩容前应压测这一串行写入点。每实例最多两个并行 KDF，约需 256 MiB 以上额外内存预算。
+
+`auth:keys` 默认在 `backend/pr-auth/.deploy/auth.json` 生成受保护 JSON。非默认路径请通过进程环境变量 `AUTH_CONFIG_FILE` 传给该命令（密钥命令不读取服务 .env），服务启动时使用相同路径。文件包含独立 cookieKeys、encryptionKeys（id/key）、hmacKey、RS256 私有 jwks、portalSecret 和 clients；多实例配置一致，不能在每次启动时重新生成。
+
+默认 clients 为空，仅内置 portal。未来静态客户端字段为：clientId、name、secret（至少 43 字符）、redirectUris、postLogoutRedirectUris、allowedRoles、scopes（只能 openid/profile/roles，必须含 openid）、refreshToken。URI 精确匹配，生产全部 HTTPS，无通配符；不要将临时客户端或私钥提交到 Git。关闭动态注册、隐式授权、密码 grant、离线授权及未使用扩展。
 
 ```sh
-VITE_API_BASE_URL=http://localhost:3000/api pnpm build
-
-# 终端一
-NODE_ENV=production \
-  CHAT_SERVICE_URL=http://127.0.0.1:3001 \
-  AUTH_SERVICE_URL=http://127.0.0.1:3002 \
-  ADMIN_SERVICE_URL=http://127.0.0.1:3003 \
-  CORS_ORIGINS=http://localhost:4173,http://localhost:4174,http://localhost:4175 \
-  pnpm start:backend
-
-# 终端二
-pnpm preview:frontend
+# 已有数据库只执行增量迁移，不重复 db:bootstrap
+pnpm --filter @my-sp-pr/pr-auth-api db:migrate
+pnpm --filter @my-sp-pr/pr-auth-api auth:keys
+pnpm --filter @my-sp-pr/pr-auth-api auth:bootstrap owner
+pnpm --filter @my-sp-pr/pr-auth-api auth:reset-password owner
+pnpm --filter @my-sp-pr/pr-auth-api auth:cleanup
 ```
 
-访问三个预览端口，浏览器请求统一到 3000。验收后执行 `pnpm build` 恢复默认构建（确保 `.env` 未覆盖 API 地址）。`vite preview` 仅用于本地验证。
+bootstrap/reset 使用 auth app 账号及隐藏密码输入，也可由受保护标准输入提供；不能把密码放命令参数。最后一个有效管理员不能降权/禁用。cleanup 需显式调度，按表每批最多 500 行、最多 100 批，过期状态额外保留 7 天 tombstone、审计保留 90 天；不在启动或健康检查中清理。独立产物对应 `node dist/scripts/<generate-keys|bootstrap-auth|reset-password|cleanup-auth>.js`。
 
-后续登录阶段再确定 OIDC/OAuth2、会话和业务授权协议；聊天长连接接入时单独设计 SSE/WebSocket、心跳及路由超时策略。
+Cookie/加密轮换时新 key 放前，旧 key 保留至全部 7 天状态过期并清理；HMAC key 暂不支持平滑轮换，修改会使旧 CSRF/审计关联失效，应作为计划内操作。当前配置接受完整 RSA 私钥 JWK；JWK 轮换先将新 key 加到末尾并发布，待客户端缓存刷新后移到首位签名，至少等待 token/缓存期限后移除旧 key。私钥仍只在服务端，JWKS 端点只返回公钥。登录页采用 no-referrer；退出确认页采用 same-origin，使原生表单 POST 保留 Origin 供严格同源校验，引用信息仍不发往其他站点。
+
+生产推荐登录站点 `https://sso.example.com`。Cookie 为 Secure、HttpOnly、SameSite=Lax、无 Domain（根路径使用 __Host-），无需共享父域 Cookie。Gateway 只信任真实入口 CIDR，入口必须覆盖外来 X-Forwarded-For；pr-auth 只信任 Gateway CIDR。Nginx 示例（证书路径及 root 按部署设置）：
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name sso.example.com;
+    ssl_certificate /etc/nginx/tls/fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/privkey.pem;
+    root /srv/pr-sso/dist;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    location ~ ^/(api/|\.well-known/(openid-configuration|oauth-authorization-server)$) {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+    }
+    location / {
+        add_header Cache-Control no-store;
+        add_header Referrer-Policy no-referrer;
+        add_header X-Frame-Options DENY;
+        add_header Content-Security-Policy "frame-ancestors 'none'";
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+同机配置 Gateway `TRUSTED_PROXY_CIDRS=loopback`，两端 `SSO_PUBLIC_ORIGIN=https://sso.example.com`。pr-auth 的 portal 兑换需要服务端能访问这个固定 issuer 的 token/UserInfo/JWKS 路径，请保证 DNS、TLS 和入口回环可达。
+
+SSO 验证：`pnpm verify:auth` 需要显式 DATABASE_VERIFY_ADMIN_URL，默认读取 pr-auth/.env 中运行/迁移连接，可用 DATABASE_VERIFY_AUTH_URL、DATABASE_VERIFY_AUTH_MIGRATION_URL、DATABASE_VERIFY_SSL_MODE 指向独立测试集群。三者必须同集群同初始库；管理员可建库，auth 两个 SQL 角色预先存在。脚本只操作新建临时库，覆盖迁移升级、真实登录/SSO/退出、重启、并发消费与撤销、角色变化和协议边界，最后清理。`verify:database` 另覆盖三服务数据库故障/恢复，支持 `DATABASE_VERIFY_<AUTH|CHAT|ADMIN>_RUNTIME_URL` 及对应 `MIGRATION_URL`，避免与管理员 URL 混淆。
+
+跨主域接入通过顶层导航到固定 issuer，未来应用各自保存本域会话；仍需在真实 HTTPS 不同站点部署后验收。聊天长连接的 SSE/WebSocket、心跳和超时另行设计。

@@ -1,47 +1,68 @@
+@layer theme, base, antd, components, utilities;
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-mono: "SFMono-Regular", Consolas, monospace;
 }
 
 @layer base {
   body {
-    @apply m-0 min-w-80 bg-[#f7f8f5] font-sans text-stone-800 antialiased;
+    @apply m-0 min-w-80 font-sans antialiased;
   }
 
   button, a {
     -webkit-tap-highlight-color: transparent;
   }
 
-  button {
-    cursor: pointer;
-  }
-
   :focus-visible {
-    @apply outline-2 outline-offset-4 outline-emerald-600;
+    outline: 2px solid var(--app-primary, #1677FF);
+    outline-offset: 4px;
   }
 
   ::selection {
-    @apply bg-emerald-100 text-emerald-950;
+    background: var(--app-primary-bg);
+    color: var(--app-text);
   }
 }
 
 @layer components {
-  .nav-link {
-    @apply rounded-lg px-3 py-2 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900;
+  .app-header {
+    border-bottom: 1px solid var(--app-border);
+    background: var(--app-surface);
   }
 
-  .nav-active {
-    @apply bg-stone-100 font-medium text-stone-900;
+  .brand-link {
+    color: var(--app-text);
+  }
+
+  .brand-mark {
+    background: var(--app-primary-bg);
+    color: var(--app-link);
+  }
+
+  .app-link {
+    color: var(--app-link);
+    text-underline-offset: 4px;
+  }
+
+  .app-link:hover {
+    color: var(--app-link-hover);
+    text-decoration: underline;
+  }
+
+  .secondary-text {
+    color: var(--app-secondary);
   }
 
   .eyebrow {
-    @apply font-mono text-[10px] font-medium tracking-[0.18em] text-emerald-800;
+    @apply font-mono text-xs font-medium tracking-widest;
+    color: var(--app-secondary);
   }
 
-  .button-secondary {
-    @apply flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50;
+  .skip-link {
+    background: var(--app-surface);
+    color: var(--app-link);
   }
 }
 

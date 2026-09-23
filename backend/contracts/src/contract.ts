@@ -1,4 +1,5 @@
 export * from './shared.js';
+export * from './auth-oidc.js';
 
 import { gatewayContract } from './gateway.contract.js';
 import { chatContract } from './chat.contract.js';

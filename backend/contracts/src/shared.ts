@@ -11,6 +11,16 @@ export const errorCodeSchema = z.enum([
   'UPSTREAM_UNAVAILABLE',
   'UPSTREAM_TIMEOUT',
   'DATABASE_NOT_READY',
+  'INVALID_CREDENTIALS',
+  'INTERACTION_EXPIRED',
+  'INVALID_INTERACTION',
+  'INVALID_INPUT',
+  'CSRF_INVALID',
+  'UNAUTHENTICATED',
+  'FORBIDDEN',
+  'RATE_LIMITED',
+  'AUTH_FLOW_INVALID',
+  'AUTH_UNAVAILABLE',
 ]).meta({ id: 'ErrorCode' });
 
 export const errorResponseSchema = z.object({
@@ -38,6 +48,48 @@ export type ErrorResponse = z.infer<typeof errorResponseSchema>;
 export type HealthData = z.infer<typeof healthDataSchema>;
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
+export const authRoleSchema = z.enum(['admin', 'user']).meta({ id: 'AuthRole' });
+export type AuthRole = z.infer<typeof authRoleSchema>;
+export const authUserSchema = z.object({
+  id: z.uuid(),
+  username: z.string(),
+  displayName: z.string(),
+  role: authRoleSchema,
+}).meta({ id: 'AuthUser' });
+export type AuthUser = z.infer<typeof authUserSchema>;
+export const authSessionDataSchema = z.discriminatedUnion('authenticated', [
+  z.object({ authenticated: z.literal(false) }),
+  z.object({
+    authenticated: z.literal(true),
+    user: authUserSchema,
+    expiresAt: z.iso.datetime(),
+    idleExpiresAt: z.iso.datetime(),
+    csrfToken: z.string(),
+  }),
+]).meta({ id: 'AuthSessionData' });
+export const authInteractionDataSchema = z.object({
+  clientName: z.string(),
+  prompt: z.literal('login'),
+  expiresAt: z.iso.datetime(),
+  csrfToken: z.string(),
+}).meta({ id: 'AuthInteractionData' });
+export const loginInputSchema = z.strictObject({
+  username: z.string().min(1).max(128),
+  password: z.string().min(1).max(128),
+  csrfToken: z.string().min(1).max(512),
+}).meta({ id: 'LoginInput' });
+export const csrfInputSchema = z.strictObject({
+  csrfToken: z.string().min(1).max(512),
+}).meta({ id: 'CsrfInput' });
+export const resumeDataSchema = z.object({
+  resumeUrl: z.string(),
+}).meta({ id: 'AuthResumeData' });
+export const logoutContextDataSchema = z.object({
+  clientName: z.string(),
+  xsrf: z.string(),
+  action: z.literal('/api/auth/oidc/logout/confirm'),
+}).meta({ id: 'LogoutContextData' });
+
 export const readinessDataSchema = z.object({
   status: z.literal('ready'),
   service: z.string(),
@@ -54,7 +106,7 @@ export type ReadinessResponse = z.infer<typeof readinessResponseSchema>;
 export const clientIds = ['pr-chat', 'pr-admin', 'pr-sso'] as const;
 export type ClientId = typeof clientIds[number];
 
-const errorResponse = (description: string) => ({
+export const errorResponse = (description: string) => ({
   description,
   content: { 'application/json': { schema: errorResponseSchema } },
 });

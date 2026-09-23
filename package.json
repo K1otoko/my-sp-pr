@@ -17,6 +17,7 @@
     "db:bootstrap": "pnpm --filter @my-sp-pr/database exec tsx scripts/bootstrap.ts",
     "db:migrate": "pnpm build:database && pnpm --filter @my-sp-pr/pr-auth-api db:migrate && pnpm --filter @my-sp-pr/pr-chat-api db:migrate && pnpm --filter @my-sp-pr/pr-admin-api db:migrate",
     "verify:database": "pnpm build:database && pnpm --filter @my-sp-pr/database verify",
+    "verify:auth": "pnpm generate:api && pnpm build:database && pnpm --filter @my-sp-pr/pr-auth-api build && pnpm --filter @my-sp-pr/gateway build && tsx backend/database/scripts/verify-auth.ts",
     "build": "pnpm generate:api && pnpm typecheck:code && pnpm -r build",
     "start:backend": "concurrently --kill-others --names gateway,chat,auth,admin \"pnpm --filter @my-sp-pr/gateway start\" \"pnpm --filter @my-sp-pr/pr-chat-api start\" \"pnpm --filter @my-sp-pr/pr-auth-api start\" \"pnpm --filter @my-sp-pr/pr-admin-api start\"",
     "preview:frontend": "concurrently --kill-others --names chat,admin,sso \"pnpm --filter @my-sp-pr/pr-chat-web preview\" \"pnpm --filter @my-sp-pr/pr-admin-web preview\" \"pnpm --filter @my-sp-pr/pr-sso-web preview\"",

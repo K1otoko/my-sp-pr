@@ -1,8 +1,17 @@
 import { createClient } from './generated/client';
 import type { ErrorResponse } from './generated/types.gen';
 
-const baseUrl = (import.meta.env.VITE_API_BASE_URL?.trim() || '/api').replace(/\/+$/u, '');
-export const apiClient = createClient({ baseUrl, parseAs: 'json' });
+export const apiClient = createClient({
+  baseUrl: '/api', parseAs: 'json', credentials: 'same-origin',
+  headers: { Accept: 'application/json' },
+});
+
+export class ApiError extends Error {
+  constructor(message: string, public readonly code?: string, public readonly status?: number, public readonly retryAfter?: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -10,7 +19,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toRequestError(error: unknown, response?: Response): Error {
   if (isRecord(error) && isRecord(error.error) && typeof error.error.message === 'string') {
-    return new Error(error.error.message);
+    return new ApiError(error.error.message,
+      typeof error.error.code === 'string' ? error.error.code : undefined,
+      response?.status, Number(response?.headers.get('retry-after')) || undefined);
   }
   if (error instanceof SyntaxError) return new Error('服务返回了无效的 JSON 数据');
   if (error instanceof TypeError) return new Error('无法连接服务，请检查网络或后端是否已启动');

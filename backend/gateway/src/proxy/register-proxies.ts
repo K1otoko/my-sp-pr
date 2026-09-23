@@ -1,13 +1,14 @@
 import type { ClientRequest, IncomingMessage } from 'node:http';
 import type { Express } from 'express';
 import { createProxyMiddleware, debugProxyErrorsPlugin, proxyEventsPlugin } from 'http-proxy-middleware';
-import { expressPath, fullPath, serviceContracts, type Operation } from '../api/index.js';
+import { authProtocolRoutes, expressPath, fullPath, serviceContracts, type Operation } from '../api/index.js';
 import { env } from '../config/env.js';
 import { upstreams } from '../config/upstreams.js';
 import { proxyError } from './proxy-error.js';
 
 type Transfer = {
   ended: boolean;
+  clientIp: string;
   outgoing?: ClientRequest;
   incoming?: IncomingMessage;
   finish: () => void;
@@ -36,6 +37,13 @@ export function registerProxies(app: Express) {
           transfer.outgoing = outgoing;
           outgoing.once('timeout', () => transfer.fail(true));
           outgoing.setHeader('X-Request-Id', request.headers['x-request-id'] as string);
+          if (service.service === 'pr-auth') {
+            const publicOrigin = new URL(env.ssoOrigin);
+            outgoing.setHeader('Host', publicOrigin.host);
+            outgoing.setHeader('X-Forwarded-Host', publicOrigin.host);
+            outgoing.setHeader('X-Forwarded-Proto', publicOrigin.protocol.slice(0, -1));
+            outgoing.setHeader('X-Forwarded-For', transfer.clientIp);
+          }
         },
         proxyRes(incoming, request) {
           const transfer = transfers.get(request);
@@ -59,10 +67,13 @@ export function registerProxies(app: Express) {
       },
     });
 
-    for (const operation of Object.values(service.apiContract) as Operation[]) {
-      if (operation.exposure !== 'public') continue;
+    const routes = (Object.values(service.apiContract) as Operation[])
+      .filter((operation) => operation.exposure === 'public')
+      .map((operation) => ({ method: operation.method, path: fullPath(service, operation) }));
+    if (service.service === 'pr-auth') routes.push(...authProtocolRoutes.map(({ method, path }) => ({ method, path })));
+    for (const operation of routes) {
       // 完整路径匹配，不挂载会截掉前缀的 Router，不修改 req.url 或 body。
-      app[operation.method](expressPath(fullPath(service, operation)), (request, response, next) => {
+      app[operation.method](expressPath(operation.path), (request, response, next) => {
         response.locals.targetService = service.service;
         const clear = () => {
           clearTimeout(timer);
@@ -82,6 +93,7 @@ export function registerProxies(app: Express) {
         };
         const transfer: Transfer = {
           ended: false,
+          clientIp: String(response.locals.clientIp ?? request.socket.remoteAddress),
           finish() { stop(); },
           cancel() {
             if (!stop()) return;

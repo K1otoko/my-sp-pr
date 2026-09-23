@@ -30,7 +30,53 @@ export type ErrorResponse = {
     };
 };
 
-export type ErrorCode = 'NOT_FOUND' | 'CORS_FORBIDDEN' | 'INVALID_JSON' | 'PAYLOAD_TOO_LARGE' | 'INTERNAL_ERROR' | 'UPSTREAM_UNAVAILABLE' | 'UPSTREAM_TIMEOUT' | 'DATABASE_NOT_READY';
+export type ErrorCode = 'NOT_FOUND' | 'CORS_FORBIDDEN' | 'INVALID_JSON' | 'PAYLOAD_TOO_LARGE' | 'INTERNAL_ERROR' | 'UPSTREAM_UNAVAILABLE' | 'UPSTREAM_TIMEOUT' | 'DATABASE_NOT_READY' | 'INVALID_CREDENTIALS' | 'INTERACTION_EXPIRED' | 'INVALID_INTERACTION' | 'INVALID_INPUT' | 'CSRF_INVALID' | 'UNAUTHENTICATED' | 'FORBIDDEN' | 'RATE_LIMITED' | 'AUTH_FLOW_INVALID' | 'AUTH_UNAVAILABLE';
+
+export type AuthInteractionData = {
+    clientName: string;
+    prompt: 'login';
+    expiresAt: string;
+    csrfToken: string;
+};
+
+export type AuthResumeData = {
+    resumeUrl: string;
+};
+
+export type LoginInput = {
+    username: string;
+    password: string;
+    csrfToken: string;
+};
+
+export type AuthSessionData = {
+    authenticated: false;
+} | {
+    authenticated: true;
+    user: AuthUser;
+    expiresAt: string;
+    idleExpiresAt: string;
+    csrfToken: string;
+};
+
+export type AuthUser = {
+    id: string;
+    username: string;
+    displayName: string;
+    role: AuthRole;
+};
+
+export type AuthRole = 'admin' | 'user';
+
+export type CsrfInput = {
+    csrfToken: string;
+};
+
+export type LogoutContextData = {
+    clientName: string;
+    xsrf: string;
+    action: '/api/auth/oidc/logout/confirm';
+};
 
 export type GetGatewayHealthData = {
     body?: never;
@@ -113,3 +159,329 @@ export type GetAuthHealthResponses = {
 };
 
 export type GetAuthHealthResponse = GetAuthHealthResponses[keyof GetAuthHealthResponses];
+
+export type GetAuthInteractionData = {
+    body?: never;
+    path: {
+        uid: string;
+    };
+    query?: never;
+    url: '/auth/interactions/{uid}';
+};
+
+export type GetAuthInteractionErrors = {
+    /**
+     * 请求无效或流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 凭证错误或未登录
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 该登录请求已处理
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 请求过于频繁
+     */
+    429: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type GetAuthInteractionError = GetAuthInteractionErrors[keyof GetAuthInteractionErrors];
+
+export type GetAuthInteractionResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: AuthInteractionData;
+    };
+};
+
+export type GetAuthInteractionResponse = GetAuthInteractionResponses[keyof GetAuthInteractionResponses];
+
+export type SubmitAuthLoginData = {
+    body: LoginInput;
+    path: {
+        uid: string;
+    };
+    query?: never;
+    url: '/auth/interactions/{uid}/login';
+};
+
+export type SubmitAuthLoginErrors = {
+    /**
+     * 请求无效或流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 凭证错误或未登录
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 该登录请求已处理
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 请求过于频繁
+     */
+    429: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type SubmitAuthLoginError = SubmitAuthLoginErrors[keyof SubmitAuthLoginErrors];
+
+export type SubmitAuthLoginResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: AuthResumeData;
+    };
+};
+
+export type SubmitAuthLoginResponse = SubmitAuthLoginResponses[keyof SubmitAuthLoginResponses];
+
+export type GetAuthSessionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/session';
+};
+
+export type GetAuthSessionErrors = {
+    /**
+     * 请求无效或流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 凭证错误或未登录
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 该登录请求已处理
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 请求过于频繁
+     */
+    429: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type GetAuthSessionError = GetAuthSessionErrors[keyof GetAuthSessionErrors];
+
+export type GetAuthSessionResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: AuthSessionData;
+    };
+};
+
+export type GetAuthSessionResponse = GetAuthSessionResponses[keyof GetAuthSessionResponses];
+
+export type StartAuthLogoutData = {
+    body: CsrfInput;
+    path?: never;
+    query?: never;
+    url: '/auth/logout';
+};
+
+export type StartAuthLogoutErrors = {
+    /**
+     * 请求无效或流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 凭证错误或未登录
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 该登录请求已处理
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 请求过于频繁
+     */
+    429: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type StartAuthLogoutError = StartAuthLogoutErrors[keyof StartAuthLogoutErrors];
+
+export type StartAuthLogoutResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: AuthResumeData;
+    };
+};
+
+export type StartAuthLogoutResponse = StartAuthLogoutResponses[keyof StartAuthLogoutResponses];
+
+export type GetAuthLogoutContextData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/auth/logout/context/{id}';
+};
+
+export type GetAuthLogoutContextErrors = {
+    /**
+     * 请求无效或流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 凭证错误或未登录
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 该登录请求已处理
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 请求过于频繁
+     */
+    429: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type GetAuthLogoutContextError = GetAuthLogoutContextErrors[keyof GetAuthLogoutContextErrors];
+
+export type GetAuthLogoutContextResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: LogoutContextData;
+    };
+};
+
+export type GetAuthLogoutContextResponse = GetAuthLogoutContextResponses[keyof GetAuthLogoutContextResponses];

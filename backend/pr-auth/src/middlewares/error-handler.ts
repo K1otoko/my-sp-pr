@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from 'express';
 import { errorResponseSchema, serviceContract, type ErrorResponse } from '../api/index.js';
 import { AppError } from '../utils/app-error.js';
+import { LoginRateError } from '../services/login.service.js';
 
 export const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, next) => {
   if (response.headersSent) {
@@ -18,6 +19,7 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     failure = new AppError(500, 'INTERNAL_ERROR', '服务暂时不可用，请稍后重试');
   }
   response.locals.errorCode = failure.code;
+  if (error instanceof LoginRateError) response.setHeader('Retry-After', String(error.retryAfter));
   if (failure.statusCode >= 500) console.error(`[${serviceContract.service}] 未处理的服务错误：`, {
     requestId: response.locals.requestId,
     code: failure.code,

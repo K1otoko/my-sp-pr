@@ -24,13 +24,15 @@ const envSchema = z.object({
   HOST: z.string().trim().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   CORS_ORIGINS: z.string().optional(),
+  SSO_PUBLIC_ORIGIN: originSchema.optional(),
+  TRUSTED_PROXY_CIDRS: z.string().default(''),
   CHAT_SERVICE_URL: originSchema.optional(),
   AUTH_SERVICE_URL: originSchema.optional(),
   ADMIN_SERVICE_URL: originSchema.optional(),
   UPSTREAM_TIMEOUT_MS: z.coerce.number().int().min(1).max(9_999).default(8_000),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production') {
-    for (const key of ['CORS_ORIGINS', ...upstreamKeys] as const) {
+    for (const key of ['CORS_ORIGINS', 'SSO_PUBLIC_ORIGIN', ...upstreamKeys] as const) {
       if (!value[key]?.trim()) context.addIssue({ code: 'custom', path: [key], message: '生产环境必须显式设置' });
     }
   }
@@ -64,6 +66,8 @@ export const env = {
   host: config.HOST,
   port: config.PORT,
   corsOrigins: new Set(origins),
+  ssoOrigin: config.SSO_PUBLIC_ORIGIN ?? 'http://localhost:5175',
+  trustedProxyCidrs: config.TRUSTED_PROXY_CIDRS.split(',').map((value) => value.trim()).filter(Boolean),
   targets,
   upstreamTimeoutMs: config.UPSTREAM_TIMEOUT_MS,
 };

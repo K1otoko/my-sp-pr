@@ -15,6 +15,13 @@
       "when": 1790070277885,
       "tag": "0001_runtime_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790132298367,
+      "tag": "0002_sso_identity",
+      "breakpoints": true
     }
   ]
 }

@@ -3,8 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f7f8f5" />
-    <meta name="description" content="PR SSO 登录系统骨架与身份服务状态。" />
+    <meta name="theme-color" content="#F5F5F5" />
+    <meta name="referrer" content="no-referrer" />
+    <style>
+      html { background: #F5F5F5; color-scheme: light; }
+      html[data-theme="dark"] { background: #141414; color-scheme: dark; }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme]) { background: #141414; color-scheme: dark; }
+      }
+    </style>
+    <script>
+      (() => {
+        let preference = 'system';
+        try {
+          const saved = localStorage.getItem('my-sp-pr:pr-sso:theme');
+          if (saved === 'light' || saved === 'dark') preference = saved;
+        } catch { /* 存储不可用时跟随系统。 */ }
+        let dark = false;
+        try { dark = matchMedia('(prefers-color-scheme: dark)').matches; } catch { /* 回退浅色。 */ }
+        const mode = preference === 'system' ? (dark ? 'dark' : 'light') : preference;
+        document.documentElement.dataset.theme = mode;
+        document.documentElement.style.colorScheme = mode;
+        document.querySelector('meta[name="theme-color"]').content = mode === 'dark' ? '#141414' : '#F5F5F5';
+      })();
+    </script>
+    <meta name="description" content="PR SSO 统一登录。" />
     <title>PR SSO · 登录系统</title>
   </head>
   <body>

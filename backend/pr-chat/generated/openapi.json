@@ -100,7 +100,17 @@
           "INTERNAL_ERROR",
           "UPSTREAM_UNAVAILABLE",
           "UPSTREAM_TIMEOUT",
-          "DATABASE_NOT_READY"
+          "DATABASE_NOT_READY",
+          "INVALID_CREDENTIALS",
+          "INTERACTION_EXPIRED",
+          "INVALID_INTERACTION",
+          "INVALID_INPUT",
+          "CSRF_INVALID",
+          "UNAUTHENTICATED",
+          "FORBIDDEN",
+          "RATE_LIMITED",
+          "AUTH_FLOW_INVALID",
+          "AUTH_UNAVAILABLE"
         ]
       },
       "ReadinessResponse": {

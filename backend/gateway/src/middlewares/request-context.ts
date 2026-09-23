@@ -5,7 +5,12 @@ import { serviceContract } from '../api/index.js';
 export const requestContext: RequestHandler = (request, response, next) => {
   const requestId = randomUUID();
   request.headers['x-request-id'] = requestId;
-  for (const header of ['x-user-id', 'x-roles', 'x-permissions']) delete request.headers[header];
+  // Express 根据配置的可信入口解析 IP，随后清除所有外部代理元数据。
+  response.locals.clientIp = request.ip ?? request.socket.remoteAddress;
+  for (const header of Object.keys(request.headers)) {
+    if (['x-user-id', 'x-roles', 'x-permissions', 'forwarded', 'x-real-ip'].includes(header)
+      || header.startsWith('x-forwarded-')) delete request.headers[header];
+  }
   response.locals.requestId = requestId;
   response.setHeader('X-Request-Id', requestId);
   const start = performance.now();

@@ -7,7 +7,10 @@ export default defineConfig({
   server: {
     port: 5175,
     strictPort: true,
-    proxy: { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: true } },
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:3000', changeOrigin: true },
+      '^/\\.well-known/(openid-configuration|oauth-authorization-server)$': { target: 'http://127.0.0.1:3000', changeOrigin: true },
+    },
   },
   preview: { port: 4175, strictPort: true },
 });

@@ -146,6 +146,9 @@ async function verify() {
   const services = [];
   for (const namespace of databaseNamespaces) {
     const env = parseEnv(await readFile(join(root, `backend/pr-${namespace}/.env`), 'utf8'));
+    env.DATABASE_URL = process.env[`DATABASE_VERIFY_${namespace.toUpperCase()}_RUNTIME_URL`] ?? env.DATABASE_URL!;
+    env.DATABASE_MIGRATION_URL = process.env[`DATABASE_VERIFY_${namespace.toUpperCase()}_MIGRATION_URL`] ?? env.DATABASE_MIGRATION_URL!;
+    env.DATABASE_SSL_MODE = process.env.DATABASE_SSL_MODE ?? env.DATABASE_SSL_MODE!;
     const runtime = parseDatabaseConfig(env, 'runtime');
     const migration = parseDatabaseConfig(env, 'migration');
     for (const config of [runtime, migration]) {
@@ -159,6 +162,7 @@ async function verify() {
       migrationsFolder: join(root, `backend/pr-${namespace}/drizzle`),
       server: join(root, `backend/pr-${namespace}/dist/server.js`),
       port: await freePort(),
+      migrationCount: (JSON.parse(await readFile(join(root, `backend/pr-${namespace}/drizzle/meta/_journal.json`), 'utf8')) as { entries: unknown[] }).entries.length,
     });
   }
   const auth = services[0];
@@ -180,6 +184,9 @@ async function verify() {
   await rejectsCode(() => checkIdentity(pg17, auth.runtime, 'auth', 'runtime'), 'DATABASE_VERSION_MISMATCH');
   await mkdir(join(root, '.verification'), { recursive: true });
   temporary = await mkdtemp(join(root, '.verification/database-'));
+  const authConfigFile = join(temporary, 'auth.json');
+  const keygen = start(join(root, 'backend/pr-auth/dist/scripts/generate-keys.js'), { AUTH_CONFIG_FILE: authConfigFile });
+  assert.equal(await bounded(keygen.exit), 0);
   const admin = await connect(adminConfig);
   let created = false;
   try {
@@ -205,6 +212,7 @@ async function verify() {
       NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(auth.port),
       DATABASE_URL: auth.runtime.connectionString,
       DATABASE_SSL_MODE: auth.runtime.ssl ? 'verify-full' : 'disable',
+      AUTH_CONFIG_FILE: authConfigFile,
     });
     assert.equal(await bounded(missingSchema.exit), 1);
     assert(!missingSchema.output().includes('服务已启动'));
@@ -214,7 +222,7 @@ async function verify() {
       const migrator = await connect(service.migration, service.namespace);
       const history = quote(databaseIdentity(service.namespace).migrationsSchema);
       const records = await migrator.query<{ count: number }>(`SELECT count(*)::int AS count FROM ${history}.__drizzle_migrations`);
-      assert.equal(records.rows[0]?.count, 2);
+      assert.equal(records.rows[0]?.count, service.migrationCount);
       await migrator.query(`CREATE TABLE ${quote(service.namespace)}.verify_items (id serial PRIMARY KEY, value text NOT NULL)`);
       await disconnect(migrator);
     }
@@ -232,15 +240,16 @@ async function verify() {
       entries: { idx: number; version: string; when: number; tag: string; breakpoints: boolean }[];
     };
     const latest = Math.max(...journal.entries.map((entry) => entry.when));
-    journal.entries.push({ idx: 2, version: '7', when: latest + 1, tag: '0002_failure', breakpoints: true });
+    const failureTag = `${String(auth.migrationCount).padStart(4, '0')}_failure`;
+    journal.entries.push({ idx: auth.migrationCount, version: '7', when: latest + 1, tag: failureTag, breakpoints: true });
     await writeFile(journalPath, JSON.stringify(journal));
-    await writeFile(join(fixture, '0002_failure.sql'),
+    await writeFile(join(fixture, `${failureTag}.sql`),
       'CREATE TABLE auth.verify_rollback(id int);\n--> statement-breakpoint\nSELECT 1 / 0;');
     await rejectsCode(() => runMigrations({ ...auth, config: auth.migration, migrationsFolder: fixture }), '22012');
     const rollback = await holder.query<{ absent: boolean; count: number }>(
       "SELECT to_regclass('auth.verify_rollback') IS NULL AS absent, (SELECT count(*)::int FROM auth_migrations.__drizzle_migrations) AS count",
     );
-    assert.deepEqual(rollback.rows, [{ absent: true, count: 2 }]);
+    assert.deepEqual(rollback.rows, [{ absent: true, count: auth.migrationCount }]);
     await disconnect(holder);
     console.log('[verify] PASS migrations: repeat, separate histories, concurrent lock and transactional rollback.');
 
@@ -330,6 +339,7 @@ async function verify() {
       NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(service.port),
       DATABASE_URL: service.runtime.connectionString, DATABASE_MIGRATION_URL: '',
       DATABASE_SSL_MODE: service.runtime.ssl ? 'verify-full' : 'disable',
+      AUTH_CONFIG_FILE: authConfigFile, SSO_PUBLIC_ORIGIN: 'http://localhost:5175',
       ...(process.env.DATABASE_SSL_CA_FILE ? { DATABASE_SSL_CA_FILE: process.env.DATABASE_SSL_CA_FILE } : {}),
     });
     const runningServices = [];
@@ -366,6 +376,10 @@ async function verify() {
         success: false, error: { code: 'DATABASE_NOT_READY', message: '服务尚未就绪' },
       });
       await response(gatewayPort, `/api/${service.namespace}/health`, 200);
+      if (service.namespace === 'auth') {
+        const failedLogin = await fetch(`http://127.0.0.1:${gatewayPort}/api/auth/portal/start`, { redirect: 'manual' });
+        assert.equal(failedLogin.status, 500, 'database outage must not start a successful identity flow');
+      }
       await provision.query(`GRANT CONNECT ON DATABASE ${quote(databaseName)} TO ${quote(identity.appRole)}`);
       await response(service.port, `/api/${service.namespace}/ready`, 200);
     }
@@ -450,12 +464,12 @@ async function verify() {
       });
       assert.equal(await bounded(migrated.exit), 0);
       const deployedAuth = start(join(deployment, 'dist/server.js'), {
-        ...environment(auth), NODE_ENV: 'production',
+        ...environment(auth), NODE_ENV: 'production', SSO_PUBLIC_ORIGIN: 'https://sso.verify.example.com',
       });
       await waitHealthy(auth.port, '/api/auth/ready', deployedAuth);
       const deployedGateway = start(join(gatewayDeployment, 'dist/server.js'), {
         NODE_ENV: 'production', HOST: '127.0.0.1', PORT: String(gatewayPort),
-        ...upstreams, CORS_ORIGINS: 'https://verify.example.com',
+        ...upstreams, CORS_ORIGINS: 'https://verify.example.com', SSO_PUBLIC_ORIGIN: 'https://sso.verify.example.com',
       });
       await waitHealthy(gatewayPort, '/api/health', deployedGateway);
       await response(gatewayPort, '/api/auth/health', 200);

@@ -1,9 +1,13 @@
 import type { Server } from 'node:http';
 import { databaseErrorCode } from '@my-sp-pr/database';
-import { app } from './app.js';
+import { createApp } from './app.js';
+import { loadAuthConfig } from './config/auth.js';
 import { env } from './config/env.js';
 import { serviceContract } from './api/index.js';
 import { database } from './db/index.js';
+import { checkIdentitySchema } from './db/check-identity.js';
+import { createAuthStore } from './repositories/auth-store.js';
+import { router } from './routes/index.js';
 import { markClosing } from './services/readiness.service.js';
 
 const label = serviceContract.service;
@@ -42,8 +46,11 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 try {
+  const config = loadAuthConfig(process.env);
   await database.checkReady();
+  await checkIdentitySchema(database.db);
   if (!closing) {
+    const { app } = createApp(config, createAuthStore(database.db, config.crypto), router);
     server = app.listen(env.port, env.host, () => {
       console.log(`[${label}] 服务已启动：http://${env.host}:${env.port} (${env.nodeEnv})`);
     });
@@ -57,7 +64,7 @@ try {
   }
 } catch (error) {
   if (!closing) {
-    console.error(`[${label}] 首次数据库检查失败：${databaseErrorCode(error)}。请检查运行账号并执行数据库迁移。`);
+    console.error(`[${label}] 首次数据库或身份配置检查失败：${databaseErrorCode(error)}。请检查运行账号、迁移与身份密钥配置。`);
     process.exitCode = 1;
     await shutdown('startup-error');
   }

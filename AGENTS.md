@@ -23,26 +23,26 @@
 ## 2. 当前项目与请求链路
 
 这是一个 pnpm workspace：三个前端、四个后端、一个内部契约包、一个数据库技术包。
-目前提供可运行骨架、真实健康与数据库就绪检查、Gateway HTTP 转发、OpenAPI 与 SDK 生成，以及 PostgreSQL 18 + Drizzle 基础设施。
-账号、登录、会话、权限、聊天和管理业务及业务表尚未实现。
+目前提供真实健康与数据库就绪检查、Gateway HTTP 转发、OpenAPI/SDK、PostgreSQL 18 + Drizzle，以及基于 oidc-provider 的 SSO 登录、中央会话和 admin/user 角色准入。
+Chat/Admin 尚未接入登录；注册、账号管理、设置、业务权限和聊天业务后续单独实现，不能将 SSO 能力表述为这些应用已完成鉴权。
 
-技术栈：Node.js 24、pnpm 10.25.0、TypeScript strict；前端使用 React 19、Vite 8、React Router 7、Tailwind CSS 4、ahooks；后端使用 Express 5、Zod 4。
+技术栈：Node.js 24、pnpm 10.25.0、TypeScript strict；前端使用 React 19、Vite 8、React Router 7、Ant Design 6、Tailwind CSS 4、ahooks；后端使用 Express 5、Zod 4。
 具体依赖版本以各 package.json 和锁文件为准，不在无关任务中升级。
 
 | 项目路径 | 包名 | 职责 | 开发/服务端口 | 预览端口 |
 | --- | --- | --- | --- | --- |
 | `frontend/pr-chat` | `@my-sp-pr/pr-chat-web` | 客户端 | 5173 | 4173 |
 | `frontend/pr-admin` | `@my-sp-pr/pr-admin-web` | 管理平台 | 5174 | 4174 |
-| `frontend/pr-sso` | `@my-sp-pr/pr-sso-web` | 登录系统骨架 | 5175 | 4175 |
+| `frontend/pr-sso` | `@my-sp-pr/pr-sso-web` | 登录、状态、退出页面 | 5175 | 4175 |
 | `backend/gateway` | `@my-sp-pr/gateway` | 统一 API 入口 | 3000 | — |
 | `backend/pr-chat` | `@my-sp-pr/pr-chat-api` | 客户端业务服务 | 3001 | — |
-| `backend/pr-auth` | `@my-sp-pr/pr-auth-api` | 身份服务骨架 | 3002 | — |
+| `backend/pr-auth` | `@my-sp-pr/pr-auth-api` | OIDC 身份服务 | 3002 | — |
 | `backend/pr-admin` | `@my-sp-pr/pr-admin-api` | 管理服务骨架 | 3003 | — |
 | `backend/contracts` | `@my-sp-pr/contracts` | 共享契约库 | 不监听 | — |
 | `backend/database` | `@my-sp-pr/database` | PG 配置、Pool、Drizzle、迁移工具 | 不监听 | — |
 
 请求链路：页面 → Hook → 生成 SDK / apiClient → Gateway → 对应后端服务。
-开发时 Vite 将同源 `/api` 原样代理到 `http://127.0.0.1:3000`；生产由三个前端统一配置网关 API 地址。
+开发时 Vite 将同源 `/api` 原样代理到 `http://127.0.0.1:3000`；SSO 还代理两个精确 discovery 路径。Chat/Admin 可配置生产网关 API 地址，SSO Cookie API 始终同源，由登录站点反代 Gateway。
 
 | 完整健康路径 | 响应服务 | 对应生成函数 |
 | --- | --- | --- |
@@ -82,6 +82,7 @@ Gateway 自身健康不代表所有下游健康。排查某个前端时检查它
 | --- | --- |
 | 页面与路由 | [App.tsx](frontend/pr-chat/src/App.tsx)、[pages](frontend/pr-chat/src/pages/)、[AppLayout.tsx](frontend/pr-chat/src/components/AppLayout.tsx) |
 | 品牌与样式 | [project.ts](frontend/pr-chat/src/project.ts)、[index.css](frontend/pr-chat/src/styles/index.css) |
+| 组件主题与偏好 | [theme/config.ts](frontend/pr-chat/src/theme/config.ts)、[ThemeProvider.tsx](frontend/pr-chat/src/theme/ThemeProvider.tsx)、[theme-store.ts](frontend/pr-chat/src/theme/theme-store.ts)、[ThemeSwitcher.tsx](frontend/pr-chat/src/components/ThemeSwitcher.tsx)、对应 `index.html` 首屏脚本 |
 | 请求状态、取消与错误 | [useHealth.ts](frontend/pr-chat/src/hooks/useHealth.ts)、[api/client.ts](frontend/pr-chat/src/api/client.ts) |
 | 新增或调整 API | [共享契约](backend/contracts/src/contract.ts)、[服务契约入口](backend/pr-chat/src/api/index.ts)、对应 routes/controllers/services |
 | 后端响应与错误 | [health.controller.ts](backend/pr-chat/src/controllers/health.controller.ts)、[error-handler.ts](backend/pr-chat/src/middlewares/error-handler.ts)、[AppError](backend/pr-chat/src/utils/app-error.ts) |
@@ -91,6 +92,8 @@ Gateway 自身健康不代表所有下游健康。排查某个前端时检查它
 | lint 与编译边界 | [lint-files.mjs](scripts/lint-files.mjs)、[eslint.config.mjs](eslint.config.mjs)、[tsconfig.base.json](tsconfig.base.json)、目标包 tsconfig |
 | 数据库配置与连接 | [database/config.ts](backend/database/src/config.ts)、[client.ts](backend/database/src/client.ts)、目标服务 `src/db/index.ts` |
 | 表结构与迁移 | 目标服务 `src/db/schema/`、`drizzle.config.ts`、`drizzle/`、[迁移执行器](backend/database/src/migrate.ts) |
+| SSO 登录与协议 | `backend/pr-auth/src/oidc/provider.ts`、`oidc/adapter.ts`、`controllers/auth.controller.ts`、`portal/client.ts` |
+| SSO 配置、账号和期限 | `backend/pr-auth/src/config/auth.ts`、`repositories/auth-store.ts`、`services/account.service.ts`、`auth/policy.ts` |
 
 先读取最相关的入口及其直接依赖；不要为了局部修改通读所有应用或生成文件。
 
@@ -98,7 +101,7 @@ Gateway 自身健康不代表所有下游健康。排查某个前端时检查它
 
 - 使用 TypeScript 函数组件；页面放 `src/pages/`，复用组件放 `src/components/`，请求状态逻辑放 `src/hooks/`。
 - 沿用 PascalCase 组件文件、`useXxx` Hook 和当前路由组织方式；新增页面同时检查 App.tsx 与需要的导航。
-- 品牌配置集中在各自 `src/project.ts`；沿用现有布局、Tailwind CSS 和样式类。
+- 品牌配置集中在各自 `src/project.ts`；后续 UI 按本节的 Ant Design 6 与主题设计规范开发，Tailwind CSS 主要用于布局、间距与响应式。
 - 已声明的业务接口使用生成 SDK，显式传入 `apiClient`；通过 `requestApi` 处理超时和错误，通过 `unwrapResponse` 取业务数据。
 - 不在页面中重复实现通用 fetch 包装、拼接服务命名空间或硬编码下游端口。
 - 使用 ahooks 管理异步请求；按实际交互覆盖加载、错误、空数据、成功与刷新状态。
@@ -106,6 +109,19 @@ Gateway 自身健康不代表所有下游健康。排查某个前端时检查它
 - 保留语义元素、键盘焦点、必要的 aria 提示、窄屏布局与减少动画偏好。
 - 三个前端独立运行；当前没有共享 UI 包，不直接导入另一前端的源码。
 - 新增 UI、状态管理或请求库属于依赖变更，先说明现有能力为何不足并纳入方案。
+
+### UI 组件与主题设计规范
+
+- 后续新增或调整 UI 时，优先使用 **Ant Design 6（Antd 6）**。按钮、表单、输入、选择、表格、分页、导航、弹层和反馈等基础能力，Antd 已满足需求时不重复实现。确有不足时说明原因，优先组合或适度扩展现有组件。
+- 三个前端通过各自的 `src/theme/ThemeProvider.tsx` 统一接入 Antd，配置集中在 `src/theme/config.ts`。页面优先使用主题 Token，实际依赖版本以 package.json 和锁文件为准；Antd 6 原生支持 React 19，不添加 v5 兼容补丁。
+- 三端统一采用 Antd 简洁蓝灰风格。品牌主色种子为 `#1677FF`；浅色页面背景 `#F5F5F5`、内容区与浮层背景 `#FFFFFF`；深色页面背景 `#141414`、内容区与浮层背景 `#1F1F1F`。
+- 主题通过 `ConfigProvider` 集中配置，浅色采用 `theme.defaultAlgorithm`，深色采用 `theme.darkAlgorithm`。文字、边框、分割线、交互色和成功/警告/错误状态使用对应语义 Token，避免在页面中散落固定颜色。普通文字对比度至少 4.5:1；辅助文字映射到 `colorTextSecondary`，链接、选中态及主按钮使用同一算法色板中满足对比度的色阶，集中在主题配置调整。
+- 默认使用 Antd 系统字体栈，基础字号 14px、基础圆角 6px、大圆角 8px、控件高度 32px，以 4px 为间距基准；具体业务布局和信息密度在对应模块设计中确定。
+- 主题支持“浅色 / 深色 / 跟随系统”，默认跟随系统；各应用独立记忆偏好，同一应用的同源标签页同步。存储键为 `my-sp-pr:<project.id>:theme`；手动选择不被系统主题变化覆盖，系统模式实时响应变化。
+- 页面背景、导航、内容区和弹层必须共同适配主题；处理首次加载闪烁、存储不可用回退，并保留键盘焦点、窄屏布局和减少动画偏好。主题切换不得重置业务状态或触发无关请求。调整主题背景或应用标识时，同步对应 `index.html` 的首屏脚本与背景样式。
+- Tailwind CSS 负责布局、间距与响应式；Antd 外观优先通过 Token 及公开的 `styles` / `classNames` 调整。保持 `theme, base, antd, components, utilities` 样式层级与 `StyleProvider layer`，不依赖组件内部 DOM 或大范围覆盖样式。
+- 消息、通知和确认框通过 Antd `App.useApp()` 获取实例，保证继承当前主题；保留 Provider 内的 Antd App DOM 根节点。使用 Antd 6 支持的 API，不沿用已废弃写法。
+- 保持三个前端的包边界，不直接跨应用导入 UI 源码。聊天、管理、登录等模块的功能与页面单独设计，不使用演示业务或模拟成功状态冒充完成。
 
 现有客户端调用形式如下；在对应 Hook 的取消与异常处理流程中使用：
 
@@ -138,6 +154,7 @@ return unwrapResponse(payload);
 - **exposure 和 clients 不提供身份授权。** clients 只筛选 SDK 消费者；需要登录或权限的接口必须先确定并实现认证授权方案。
 - 下游 OpenAPI 包含自身操作；Gateway OpenAPI 汇总公开操作；每个前端 SDK 仅包含分配给它的公开操作。
 - 生成器不实现业务逻辑，不注册新的下游控制器，也不替代运行时输入校验。
+- OIDC 协议例外：路由集中于 `auth-oidc.ts`，由 pr-auth/Gateway 精确复用；两个根 discovery 及标准协议响应不使用 JSON 业务包装，不生成普通 SDK。JSON 交互/会话操作仍遵循服务契约。
 
 ### 后端实现规则
 
@@ -173,9 +190,19 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 - Neon 事务池地址转换为同端点直连，运行由应用 Pool 管理；TLS 校验证书与主机。URL 参数及 channel binding 支持范围以 README 为准。
 - 配置报错和运行日志不得输出连接串、密码、完整 SQL 参数或驱动嵌套错误。环境文件和验证凭据不提交 Git。
 
+### SSO 身份边界
+
+- issuer 为稳定 SSO Origin，Gateway/pr-auth 配置必须一致；开发为 `http://localhost:5175`，生产必须 HTTPS。同源 Cookie 无 Domain，不共享父域 Cookie。
+- 仅 Authorization Code + PKCE S256，机密客户端；私钥、client secret 和 token 均留在后端。静态注册客户端，精确回调/退出地址与 scopes/allowedRoles。
+- auth 七表归身份服务；角色固定 admin/user，默认 user。角色 scope 是身份声明，不代替未来业务权限或数据归属检查；管理员不默认可读其他用户私人数据。
+- 中央登录最长 7 天、空闲 24 小时；退出当前浏览器撤销关联授权，其他设备保留。密码重置/禁用/角色变化递增 auth_version 并撤销该用户全部会话。
+- `auth:keys` 显式生成独立密钥配置，不在启动时生成。bootstrap/reset 使用隐藏输入及 app DML 凭据，不能固定默认密码；最后一个有效管理员不能被禁用/降权。
+- Adapter 的消费/撤销/期限语义必须保留；数据库失败不回退内存。维护命令显式运行，保留 tombstone 和审计期限；不在健康检查中清理。
+- SSO 前端仅登录/状态/退出/错误页面。未来 Admin 经受保护身份 API 管理账号，不直接写 auth Schema；Chat/Admin 接入和跨域应用会话撤销另行设计。
+
 ## 7. Gateway 与环境约定
 
-- Gateway 只转发契约声明的公开 method/完整路径，使用已配置的固定上游，不接受客户端指定转发目标。
+- Gateway 只转发契约和集中 OIDC 清单声明的公开 method/完整路径，使用已配置的固定上游，不接受客户端指定转发目标。
 - 保持完整路径、query、编码和原始请求体；不要添加路径重写或任意服务前缀通配代理。
 - 代理前不全局执行 JSON 解析，不缓存完整响应，不擅自添加重试或自动跟随重定向。
 - 保留正常上游状态、响应头与响应体；连接失败返回 502，超时返回 504。
@@ -184,7 +211,8 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 - Gateway 生成并覆盖 X-Request-Id，下游复用；保留外部身份头清理，不把请求追踪字段当作身份。
 - 访问日志不包含凭证、完整请求体或 query；修改日志内容时仍须保留已有 console.log。
 - 仅 Gateway 管理浏览器 CORS；下游默认绑定 127.0.0.1。CORS 不替代身份鉴权或网络隔离。
-- Gateway 生产环境显式配置三个上游 Origin 和前端 CORS_ORIGINS；当前未启用 Cookie 跨域凭据。
+- Gateway 生产环境显式配置三个上游 Origin、CORS_ORIGINS 和 SSO_PUBLIC_ORIGIN；不全局启用 Cookie 跨域凭据。协议端点区分公开元数据、顶层导航、仅后端调用；SSO JSON 写操作校验同源和 CSRF。
+- 外部 Forwarded/X-Forwarded-* 清除后重建；TRUSTED_PROXY_CIDRS 只列实际入口，AUTH_TRUSTED_GATEWAY_CIDRS 只列 Gateway，入口必须覆盖外来 IP 头，不能信任任意来源。
 - 后端读取各自应用目录的 `.env`，进程环境变量优先；新增配置同步维护 `.env.example`。
 - 不提交实际 `.env` 或凭证；`VITE_*` 会进入浏览器构建产物，不能包含密钥。
 - 调整内部服务端口时同步 Gateway 对应上游配置，前端继续使用统一入口。
@@ -209,6 +237,9 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 | 首次空库初始化 / 显式串行迁移 | `pnpm db:bootstrap` / `pnpm db:migrate` |
 | 单服务离线生成 / 元数据检查 | `pnpm --filter @my-sp-pr/pr-chat-api db:generate` / `db:check` |
 | 真实 PG18 临时库验证 | `pnpm verify:database` |
+| SSO 协议/并发临时库验证 | `pnpm verify:auth` |
+| SSO 密钥/首次管理员 | `pnpm --filter @my-sp-pr/pr-auth-api auth:keys` / `auth:bootstrap <username>` |
+| 密码恢复/显式清理 | `pnpm --filter @my-sp-pr/pr-auth-api auth:reset-password <username>` / `auth:cleanup` |
 | 生成并检查九个包和工具脚本 | `pnpm typecheck` |
 | 生成、类型检查及完整构建 | `pnpm build` |
 | 运行已构建后端 / 预览前端 | `pnpm start:backend` / `pnpm preview:frontend` |
@@ -249,7 +280,7 @@ lint 入口拒绝空参数及选项，具体规则见 `scripts/lint-files.mjs`�
 | 契约或跨服务改动 | 生成产物、受影响手写文件 lint、跨包类型检查/构建、经 Gateway 的端到端请求 |
 | Gateway 代理改动 | 上述相关检查，加上受影响的未知路由、上游故障、超时、流式和取消场景 |
 
-- 当前没有通用测试框架或 `pnpm test`；数据库集成验证使用显式 `pnpm verify:database`。不把构建通过表述为测试全部通过。
+- 当前没有通用测试框架或 `pnpm test`；数据库集成验证使用 `pnpm verify:database`，SSO 验证使用 `pnpm verify:auth`。不把构建通过表述为测试全部通过。
 - 为复杂行为选择有实际价值的验证；不要为低影响文案修改新增测试框架。
 - 依赖新增先纳入方案；已有手段可验证时优先复用。
 - 检查成功后，只有出现新修改、失败或未解决风险才扩大或重复验证。

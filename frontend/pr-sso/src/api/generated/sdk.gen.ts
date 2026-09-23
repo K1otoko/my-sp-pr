@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetAuthHealthData, GetAuthHealthErrors, GetAuthHealthResponses, GetGatewayHealthData, GetGatewayHealthErrors, GetGatewayHealthResponses } from './types.gen';
+import type { GetAuthHealthData, GetAuthHealthErrors, GetAuthHealthResponses, GetAuthInteractionData, GetAuthInteractionErrors, GetAuthInteractionResponses, GetAuthLogoutContextData, GetAuthLogoutContextErrors, GetAuthLogoutContextResponses, GetAuthSessionData, GetAuthSessionErrors, GetAuthSessionResponses, GetGatewayHealthData, GetGatewayHealthErrors, GetGatewayHealthResponses, StartAuthLogoutData, StartAuthLogoutErrors, StartAuthLogoutResponses, SubmitAuthLoginData, SubmitAuthLoginErrors, SubmitAuthLoginResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -27,3 +27,42 @@ export const getGatewayHealth = <ThrowOnError extends boolean = false>(options?:
  * 查询服务健康状态
  */
 export const getAuthHealth = <ThrowOnError extends boolean = false>(options?: Options<GetAuthHealthData, ThrowOnError>): RequestResult<GetAuthHealthResponses, GetAuthHealthErrors, ThrowOnError> => (options?.client ?? client).get<GetAuthHealthResponses, GetAuthHealthErrors, ThrowOnError>({ url: '/auth/health', ...options });
+
+/**
+ * 读取登录交互（Accept: application/json）
+ */
+export const getAuthInteraction = <ThrowOnError extends boolean = false>(options: Options<GetAuthInteractionData, ThrowOnError>): RequestResult<GetAuthInteractionResponses, GetAuthInteractionErrors, ThrowOnError> => (options.client ?? client).get<GetAuthInteractionResponses, GetAuthInteractionErrors, ThrowOnError>({ url: '/auth/interactions/{uid}', ...options });
+
+/**
+ * 提交用户名密码
+ */
+export const submitAuthLogin = <ThrowOnError extends boolean = false>(options: Options<SubmitAuthLoginData, ThrowOnError>): RequestResult<SubmitAuthLoginResponses, SubmitAuthLoginErrors, ThrowOnError> => (options.client ?? client).post<SubmitAuthLoginResponses, SubmitAuthLoginErrors, ThrowOnError>({
+    url: '/auth/interactions/{uid}/login',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 读取本站登录状态
+ */
+export const getAuthSession = <ThrowOnError extends boolean = false>(options?: Options<GetAuthSessionData, ThrowOnError>): RequestResult<GetAuthSessionResponses, GetAuthSessionErrors, ThrowOnError> => (options?.client ?? client).get<GetAuthSessionResponses, GetAuthSessionErrors, ThrowOnError>({ url: '/auth/session', ...options });
+
+/**
+ * 开始当前浏览器统一退出
+ */
+export const startAuthLogout = <ThrowOnError extends boolean = false>(options: Options<StartAuthLogoutData, ThrowOnError>): RequestResult<StartAuthLogoutResponses, StartAuthLogoutErrors, ThrowOnError> => (options.client ?? client).post<StartAuthLogoutResponses, StartAuthLogoutErrors, ThrowOnError>({
+    url: '/auth/logout',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 读取浏览器绑定的退出确认
+ */
+export const getAuthLogoutContext = <ThrowOnError extends boolean = false>(options: Options<GetAuthLogoutContextData, ThrowOnError>): RequestResult<GetAuthLogoutContextResponses, GetAuthLogoutContextErrors, ThrowOnError> => (options.client ?? client).get<GetAuthLogoutContextResponses, GetAuthLogoutContextErrors, ThrowOnError>({ url: '/auth/logout/context/{id}', ...options });
