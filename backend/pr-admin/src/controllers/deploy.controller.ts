@@ -10,6 +10,35 @@ function success<T extends { parse: (value: unknown) => unknown }>(schema: T, da
 }
 
 export function deployHandlers(auth: AdminAuthService, deployments: DeploymentService) {
+  const availableRepositories: RequestHandler = async (_request, response) => {
+    response.json(success(
+      apiContract.listAvailableDeployRepositories.responses[200].content['application/json'].schema,
+      await deployments.availableRepositories(),
+    ));
+  };
+  const importRepository: RequestHandler = async (request, response) => {
+    const input = apiContract.importDeployRepository.request.body.content['application/json'].schema.safeParse(request.body);
+    if (!request.is('application/json') || !input.success) throw new AppError(400, 'INVALID_INPUT', '导入请求无效');
+    const principal = adminPrincipal(response);
+    auth.verifyCsrf(request, principal, input.data.csrfToken);
+    response.json(success(
+      apiContract.importDeployRepository.responses[200].content['application/json'].schema,
+      await deployments.importRepository(input.data, principal.user, String(response.locals.requestId)),
+    ));
+  };
+  const synchronizeRepository: RequestHandler = async (request, response) => {
+    const params = apiContract.syncDeployRepository.request.params.safeParse(request.params);
+    const input = apiContract.syncDeployRepository.request.body.content['application/json'].schema.safeParse(request.body);
+    if (!params.success || !request.is('application/json') || !input.success) {
+      throw new AppError(400, 'INVALID_INPUT', '仓库同步请求无效');
+    }
+    const principal = adminPrincipal(response);
+    auth.verifyCsrf(request, principal, input.data.csrfToken);
+    response.json(success(
+      apiContract.syncDeployRepository.responses[200].content['application/json'].schema,
+      await deployments.synchronizeRepository(params.data.repositoryId, principal.user, String(response.locals.requestId)),
+    ));
+  };
   const listProjects: RequestHandler = async (_request, response) => {
     response.json(success(
       apiContract.listDeployProjects.responses[200].content['application/json'].schema,
@@ -162,6 +191,9 @@ export function deployHandlers(auth: AdminAuthService, deployments: DeploymentSe
     ));
   };
   return {
+    availableRepositories,
+    importRepository,
+    synchronizeRepository,
     listProjects,
     getProject,
     synchronizeProjects,

@@ -6,6 +6,7 @@ import {
 import path from 'node:path';
 import process from 'node:process';
 import { promisify } from 'node:util';
+import { parseDeployManifest } from './manifest.mjs';
 
 const execute = promisify(execFile);
 
@@ -120,7 +121,7 @@ for (const [name, expected] of Object.entries(checksums)) {
     || await sha256(path.join(artifact, name)) !== expected) throw new Error(`制品摘要校验失败：${name}`);
 }
 
-const manifest = JSON.parse(await readFile(path.join(control, 'deploy.manifest.json'), 'utf8'));
+const manifest = parseDeployManifest(await readFile(path.join(control, 'deploy.manifest.json'), 'utf8'));
 const unit = manifest.units?.find((candidate) => candidate.id === release.unitId);
 if (!unit || unit.kind !== release.kind) throw new Error('制品 manifest 与 release 不匹配');
 

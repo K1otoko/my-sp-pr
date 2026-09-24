@@ -14,8 +14,8 @@ const tokenResponseSchema = z.object({
 
 export function githubApp(config: GitHubConfig, now = () => new Date()) {
   let signingKey: ReturnType<typeof importPKCS8> | undefined;
-  let cached: { token: string; expiresAt: Date } | undefined;
-  let pending: Promise<string> | undefined;
+  const cached = new Map<string, { token: string; expiresAt: Date }>();
+  const pending = new Map<string, Promise<string>>();
 
   async function key() {
     signingKey ??= (async () => {
@@ -38,11 +38,11 @@ export function githubApp(config: GitHubConfig, now = () => new Date()) {
       .sign(await key());
   }
 
-  async function loadToken() {
+  async function appRequest(path: string, method = 'GET') {
     const response = await fetch(
-      `${config.apiOrigin}/app/installations/${config.installationId}/access_tokens`,
+      `${config.apiOrigin}${path}`,
       {
-        method: 'POST',
+        method,
         headers: {
           Accept: 'application/vnd.github+json',
           Authorization: `Bearer ${await appJwt()}`,
@@ -56,17 +56,45 @@ export function githubApp(config: GitHubConfig, now = () => new Date()) {
       throw new AppError(503, 'GITHUB_UNAVAILABLE', 'GitHub 暂时不可用，请稍后重试');
     });
     if (!response.ok) throw new AppError(503, 'GITHUB_UNAVAILABLE', 'GitHub App 授权失败');
+    return response;
+  }
+
+  async function loadToken(installationId: string) {
+    const response = await appRequest(`/app/installations/${installationId}/access_tokens`, 'POST');
     const parsed = tokenResponseSchema.safeParse(await response.json());
     if (!parsed.success) throw new AppError(503, 'GITHUB_UNAVAILABLE', 'GitHub App 返回无效响应');
-    cached = { token: parsed.data.token, expiresAt: new Date(parsed.data.expires_at) };
-    return cached.token;
+    cached.set(installationId, { token: parsed.data.token, expiresAt: new Date(parsed.data.expires_at) });
+    return parsed.data.token;
   }
 
   return {
-    async token() {
-      if (cached && cached.expiresAt.getTime() > now().getTime() + 60_000) return cached.token;
-      pending ??= loadToken().finally(() => { pending = undefined; });
-      return pending;
+    async installations() {
+      const schema = z.array(z.object({
+        id: z.number().int().positive(),
+        account: z.object({ login: z.string() }),
+        suspended_at: z.string().nullable(),
+      }));
+      const installations: z.infer<typeof schema> = [];
+      for (let page = 1; page <= 10; page += 1) {
+        const response = await appRequest(`/app/installations?per_page=100&page=${page}`);
+        const parsed = schema.safeParse(await response.json());
+        if (!parsed.success) throw new AppError(503, 'GITHUB_UNAVAILABLE', 'GitHub installation 响应无效');
+        installations.push(...parsed.data.filter((item) => item.suspended_at === null
+          && config.allowedOwners.has(item.account.login.toLowerCase())));
+        if (parsed.data.length < 100) return installations;
+      }
+      throw new AppError(503, 'GITHUB_UNAVAILABLE', 'GitHub installation 数量超过单次查询上限');
+    },
+    async token(installationId: string) {
+      if (!/^[1-9][0-9]{0,15}$/u.test(installationId)) throw new AppError(403, 'FORBIDDEN', 'installation ID 无效');
+      const current = cached.get(installationId);
+      if (current && current.expiresAt.getTime() > now().getTime() + 60_000) return current.token;
+      let loading = pending.get(installationId);
+      if (!loading) {
+        loading = loadToken(installationId).finally(() => { pending.delete(installationId); });
+        pending.set(installationId, loading);
+      }
+      return loading;
     },
   };
 }

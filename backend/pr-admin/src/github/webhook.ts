@@ -6,6 +6,7 @@ import { AppError } from '../utils/app-error.js';
 type GitHubConfig = NonNullable<typeof env.github>;
 
 const payloadSchema = z.object({
+  installation: z.object({ id: z.number().int().positive() }).optional(),
   deployment_status: z.object({
     id: z.number().int().positive(),
     state: z.enum(['pending', 'queued', 'in_progress', 'success', 'failure', 'error', 'inactive']),
@@ -75,13 +76,19 @@ export function verifyGitHubWebhook(
   if (!parsed.success || typeof parsed.data.deployment.payload === 'string') {
     throw new AppError(400, 'WEBHOOK_INVALID', 'GitHub webhook 内容无效');
   }
-  if (parsed.data.repository.full_name.toLowerCase() !== config.repository.toLowerCase()
-    || !config.allowedOwners.has(parsed.data.repository.owner.login.toLowerCase())) {
+  const fullName = parsed.data.repository.full_name;
+  const installationId = parsed.data.installation?.id
+    ?? (fullName.toLowerCase() === config.repository?.toLowerCase() ? config.installationId : undefined);
+  if (!installationId || !config.allowedOwners.has(parsed.data.repository.owner.login.toLowerCase())
+    || fullName.split('/')[0]?.toLowerCase() !== parsed.data.repository.owner.login.toLowerCase()
+    || parsed.data.deployment.environment !== parsed.data.deployment.payload.environment) {
     throw new AppError(403, 'WEBHOOK_INVALID', 'GitHub webhook 仓库不匹配');
   }
   return {
     deliveryId: headers.delivery,
     repositoryId: String(parsed.data.repository.id),
+    repositoryFullName: fullName,
+    installationId: String(installationId),
     githubDeploymentId: String(parsed.data.deployment.id),
     githubStatusId: String(parsed.data.deployment_status.id),
     localDeploymentId: parsed.data.deployment.payload.deploymentId,

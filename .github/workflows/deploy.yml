@@ -167,6 +167,7 @@ jobs:
               --output "${RUNNER_TEMP}/deploy-control/$2"
           }
           fetch_control scripts/deploy/install.mjs install.mjs
+          fetch_control scripts/deploy/manifest.mjs manifest.mjs
           fetch_control scripts/deploy/github-status.mjs github-status.mjs
           fetch_control deploy/pm2/ecosystem.config.cjs ecosystem.config.cjs
           fetch_control deploy.manifest.json deploy.manifest.json

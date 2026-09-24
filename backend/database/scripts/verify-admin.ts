@@ -9,17 +9,20 @@ import pg from 'pg';
 import {
   connectionOptions, databaseErrorCode, parseDatabaseConfig, runMigrations, type DatabaseConfig,
 } from '../src/index.js';
+import { verifyAdminUpgrade } from './verify-admin-upgrade.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const name = `my_sp_pr_verify_admin_${Date.now()}_${randomBytes(4).toString('hex')}`;
 const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
 const connections: pg.Client[] = [];
 let created = false;
+let upgradeCreated = false;
+const upgradeName = `${name}_upgrade`;
 
-function move(config: DatabaseConfig): DatabaseConfig {
+function move(config: DatabaseConfig, databaseName = name): DatabaseConfig {
   const url = new URL(config.connectionString);
-  url.pathname = `/${name}`;
-  return { ...config, databaseName: name, connectionString: url.href };
+  url.pathname = `/${databaseName}`;
+  return { ...config, databaseName, connectionString: url.href };
 }
 
 async function connect(config: DatabaseConfig) {
@@ -63,6 +66,18 @@ async function verify() {
       namespace: 'admin',
       migrationsFolder: join(root, 'backend/pr-admin/drizzle'),
     });
+    console.log('[admin-verify] PASS empty database migration.');
+    await admin.query(`CREATE DATABASE ${quote(upgradeName)}`);
+    upgradeCreated = true;
+    const upgradeProvision = await connect(move(administrator, upgradeName));
+    await upgradeProvision.query(`REVOKE ALL ON DATABASE ${quote(upgradeName)} FROM PUBLIC`);
+    await upgradeProvision.query('REVOKE ALL ON SCHEMA public FROM PUBLIC');
+    await upgradeProvision.query(`GRANT CONNECT ON DATABASE ${quote(upgradeName)} TO my_sp_pr_admin_app`);
+    await upgradeProvision.query(`GRANT CONNECT, CREATE ON DATABASE ${quote(upgradeName)} TO my_sp_pr_admin_migrator`);
+    const upgradeRuntime = await connect(move(runtime, upgradeName));
+    await verifyAdminUpgrade({
+      root, migration: move(migration, upgradeName), client: upgradeRuntime,
+    });
     const randomToken = () => randomBytes(32).toString('base64url');
     const child = spawn(process.execPath, ['--import', 'tsx', 'src/tests/verify-admin.ts'], {
       cwd: join(root, 'backend/pr-admin'),
@@ -91,6 +106,10 @@ async function verify() {
     if (created) {
       await admin.query(`DROP DATABASE ${quote(name)} WITH (FORCE)`);
       console.log('[admin-verify] Temporary admin database removed.');
+    }
+    if (upgradeCreated) {
+      await admin.query(`DROP DATABASE ${quote(upgradeName)} WITH (FORCE)`);
+      console.log('[admin-verify] Temporary upgrade database removed.');
     }
     await admin.end();
   }

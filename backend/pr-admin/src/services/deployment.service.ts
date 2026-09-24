@@ -1,8 +1,9 @@
 import { databaseErrorCode } from '@my-sp-pr/database';
+import { DrizzleQueryError } from 'drizzle-orm';
 import type { AdminIdentity } from '../auth/oidc-client.js';
 import { parseDeployManifest } from '../deploy/manifest.js';
 import type { env } from '../config/env.js';
-import type { GitHubClient } from '../github/github-client.js';
+import type { GitHubClient, GitHubRepositoryClient } from '../github/github-client.js';
 import type { DeployRepository } from '../repositories/deploy.repository.js';
 import { AppError } from '../utils/app-error.js';
 
@@ -18,6 +19,10 @@ type EnvironmentInput = {
   production: boolean;
   migrationsAllowed: boolean;
 };
+
+function uniqueConflict(error: unknown) {
+  return databaseErrorCode(error instanceof DrizzleQueryError ? error.cause : error) === '23505';
+}
 
 function globMatches(value: string, pattern: string) {
   const expression = pattern.split('*').map((part) => part.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&')).join('.*');
@@ -52,12 +57,50 @@ export function deploymentService(
     return { github, githubConfig };
   }
 
+  async function projectClient(project: { repositoryId: string }) {
+    const catalog = await repository.repositoryByGithubId(project.repositoryId);
+    if (!catalog?.enabled || !catalog.installationId) {
+      throw new AppError(422, 'CONFIGURATION_INCOMPLETE', '仓库尚未同步或已停用');
+    }
+    return requireGithub().github.forRepository({
+      fullName: catalog.fullName, installationId: catalog.installationId, githubRepositoryId: catalog.githubRepositoryId,
+    });
+  }
+
+  async function synchronizeClient(client: GitHubRepositoryClient, actor: AdminIdentity, requestId: string, bootstrap = false) {
+    const githubRepository = await client.repository();
+    const existing = await repository.repositoryByGithubId(String(githubRepository.id));
+    if (existing && !existing.enabled) throw new AppError(403, 'FORBIDDEN', '仓库已停用');
+    const commit = await client.resolveRef(githubRepository.default_branch);
+    const manifest = parseDeployManifest(await client.manifest(commit.sha));
+    await client.workflow(commit.sha);
+    for (const ref of new Set(manifest.units.map((unit) => unit.defaultRef).filter((value) => value !== undefined))) {
+      await client.resolveRef(ref);
+    }
+    try {
+      return await repository.synchronizeProjects({
+        repositoryId: String(githubRepository.id),
+        repositoryFullName: githubRepository.full_name,
+        installationId: client.installationId!,
+        defaultBranch: githubRepository.default_branch,
+        htmlUrl: githubRepository.html_url,
+        manifestSha: commit.sha,
+        manifestVersion: manifest.version,
+        units: manifest.units,
+        actor, requestId, bootstrap,
+      });
+    } catch (error) {
+      if (uniqueConflict(error)) throw new AppError(409, 'DEPLOYMENT_CONFLICT', '仓库或项目标识已被占用');
+      throw error;
+    }
+  }
+
   async function configuration(environmentId: string) {
     const environment = await repository.getEnvironment(environmentId);
     if (!environment) throw new AppError(404, 'NOT_FOUND', '发布环境不存在');
     const project = await repository.getProject(environment.projectId);
     if (!project || !project.row.enabled) throw new AppError(404, 'NOT_FOUND', '发布项目不存在或已停用');
-    const { github: client } = requireGithub();
+    const client = await projectClient(project.row);
     const configured = await client.environment(environment.githubEnvironmentName);
     const entries = project.row.manifest.variables.map((variable) => ({
       ...variable,
@@ -108,7 +151,7 @@ export function deploymentService(
     requestId: string;
     rollbackOfId?: string;
   }) {
-    const { github: client } = requireGithub();
+    const client = await projectClient(input.project);
     const deployment = await repository.createRequestedDeployment(input);
     if (!deployment) {
       throw new AppError(409, 'DEPLOYMENT_CONFLICT', '该项目和环境已有活动发布');
@@ -143,6 +186,19 @@ export function deploymentService(
   }
 
   return {
+    availableRepositories: () => requireGithub().github.available(),
+    async importRepository(input: { githubRepositoryId: string; installationId: string }, actor: AdminIdentity, requestId: string) {
+      const client = requireGithub().github;
+      const visible = (await client.available()).find((item) => item.githubRepositoryId === input.githubRepositoryId
+        && item.installationId === input.installationId);
+      if (!visible) throw new AppError(403, 'FORBIDDEN', '仓库不在 GitHub App 可见及允许范围内');
+      return synchronizeClient(client.forRepository(visible), actor, requestId);
+    },
+    async synchronizeRepository(repositoryId: string, actor: AdminIdentity, requestId: string) {
+      const catalog = await repository.getRepository(repositoryId);
+      if (!catalog) throw new AppError(404, 'NOT_FOUND', '仓库不存在');
+      return synchronizeClient(await projectClient({ repositoryId: catalog.githubRepositoryId }), actor, requestId);
+    },
     listProjects: () => repository.listProjects(),
     async getProject(projectId: string) {
       const project = await repository.getProject(projectId);
@@ -150,20 +206,11 @@ export function deploymentService(
       return project.data;
     },
     async synchronize(actor: AdminIdentity, requestId: string) {
-      const { github: client } = requireGithub();
-      const githubRepository = await client.repository();
-      const commit = await client.resolveRef(githubRepository.default_branch);
-      const manifest = parseDeployManifest(await client.manifest(commit.sha));
-      const synchronized = await repository.synchronizeProjects({
-        repositoryId: String(githubRepository.id),
-        repositoryFullName: githubRepository.full_name,
-        manifestSha: commit.sha,
-        manifestVersion: manifest.version,
-        units: manifest.units,
-        actor,
-        requestId,
-      });
-      return { synchronized, manifestSha: commit.sha };
+      const { github: client, githubConfig: config } = requireGithub();
+      if (!config.repository || !config.installationId) {
+        throw new AppError(422, 'CONFIGURATION_INCOMPLETE', '请通过仓库目录选择仓库并同步');
+      }
+      return synchronizeClient(client, actor, requestId, true);
     },
     async listEnvironments(projectId: string) {
       if (!await repository.getProject(projectId)) throw new AppError(404, 'NOT_FOUND', '发布项目不存在');
@@ -176,7 +223,7 @@ export function deploymentService(
       try {
         return await repository.createEnvironment(projectId, input, actor, requestId);
       } catch (error) {
-        if (databaseErrorCode(error) === '23505') {
+        if (uniqueConflict(error)) {
           throw new AppError(409, 'DEPLOYMENT_CONFLICT', '同名发布环境已存在');
         }
         throw error;
@@ -207,7 +254,7 @@ export function deploymentService(
         if (!environment) throw new AppError(404, 'NOT_FOUND', '发布环境不存在');
         return environment;
       } catch (error) {
-        if (databaseErrorCode(error) === '23505') {
+        if (uniqueConflict(error)) {
           throw new AppError(409, 'DEPLOYMENT_CONFLICT', '同名发布环境已存在');
         }
         throw error;
@@ -215,8 +262,9 @@ export function deploymentService(
     },
     configuration,
     async refs(projectId: string) {
-      if (!await repository.getProject(projectId)) throw new AppError(404, 'NOT_FOUND', '发布项目不存在');
-      return requireGithub().github.refs();
+      const project = await repository.getProject(projectId);
+      if (!project) throw new AppError(404, 'NOT_FOUND', '发布项目不存在');
+      return (await projectClient(project.row)).refs();
     },
     listDeployments: repository.listDeployments,
     async getDeployment(deploymentId: string) {
@@ -248,7 +296,7 @@ export function deploymentService(
       if (!environmentConfiguration.complete) {
         throw new AppError(422, 'CONFIGURATION_INCOMPLETE', '发布环境缺少必填配置');
       }
-      const client = requireGithub().github;
+      const client = await projectClient(project.row);
       const [commit, refs] = await Promise.all([client.resolveRef(input.ref), client.refs()]);
       if (!await allowedRef(input.ref, commit.sha, environment, refs)) {
         throw new AppError(422, 'REF_NOT_ALLOWED', 'Git ref 不符合该环境的发布规则');
@@ -301,7 +349,14 @@ export function deploymentService(
         requestId: input.requestId,
       });
     },
-    async receiveEvent(input: Parameters<DeployRepository['applyEvent']>[0]) {
+    async receiveEvent(input: Parameters<DeployRepository['applyEvent']>[0] & {
+      repositoryFullName: string; installationId: string;
+    }) {
+      const catalog = await repository.repositoryByGithubId(input.repositoryId);
+      if (!catalog || catalog.fullName.toLowerCase() !== input.repositoryFullName.toLowerCase()
+        || catalog.installationId !== input.installationId) {
+        throw new AppError(403, 'WEBHOOK_INVALID', 'GitHub webhook 仓库或 installation 不匹配');
+      }
       const result = await repository.applyEvent(input);
       if (result === 'mismatch') throw new AppError(403, 'WEBHOOK_INVALID', 'GitHub webhook 目标不匹配');
       return { accepted: true };

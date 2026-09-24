@@ -22,6 +22,34 @@
       "when": 1790167582321,
       "tag": "0002_admin_auth_deploy_mvp",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790238922467,
+      "tag": "0003_deployment_platform_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790239028821,
+      "tag": "0004_deployment_platform_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790242044256,
+      "tag": "0005_repository_manifest_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790243984223,
+      "tag": "0006_target_agent",
+      "breakpoints": true
     }
   ]
 }

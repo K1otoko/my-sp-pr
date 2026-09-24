@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import {
-  AppstoreOutlined, DashboardOutlined, HistoryOutlined, LogoutOutlined, MenuOutlined, RocketOutlined, UserOutlined,
+  AppstoreOutlined, AuditOutlined, CloudServerOutlined, DashboardOutlined, GithubOutlined, HistoryOutlined,
+  LogoutOutlined, RocketOutlined, UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, Drawer, Dropdown, Layout, Menu, Space, Tag, Tooltip, Typography } from 'antd';
+import { Avatar, Button, Dropdown, Layout, Menu, Space, Tag, Typography } from 'antd';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { project } from '../project';
@@ -13,18 +13,25 @@ const { Header, Sider, Content } = Layout;
 export function AppLayout() {
   const { pathname } = useLocation();
   const session = useAdminSession();
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const user = session.session?.authenticated ? session.session.user : undefined;
   const isDeploymentPlatform = pathname === '/deploy' || pathname.startsWith('/deploy/');
   const canAccessDeployment = user?.role === 'super';
   const showDeploymentNavigation = isDeploymentPlatform && canAccessDeployment;
-  const selectedDeploymentItem = pathname.startsWith('/deploy/deployments')
-    ? '/deploy/deployments'
-    : '/deploy/projects';
+  const selectedDeploymentItem = pathname.startsWith('/deploy/repositories')
+    ? '/deploy/repositories'
+    : pathname.startsWith('/deploy/projects')
+      ? '/deploy/projects'
+      : pathname.startsWith('/deploy/targets')
+        ? '/deploy/targets'
+        : pathname.startsWith('/deploy/releases') || pathname.startsWith('/deploy/deployments')
+          ? '/deploy/releases'
+          : pathname.startsWith('/deploy/audit')
+            ? '/deploy/audit'
+            : '/deploy';
   const platformItems = [
     { key: '/', icon: <DashboardOutlined />, label: <Link to="/">Dashboard</Link> },
     ...(user?.role === 'super' ? [
-      { key: '/deploy', icon: <RocketOutlined />, label: <Link to="/deploy/projects">部署平台</Link> },
+      { key: '/deploy', icon: <RocketOutlined />, label: <Link to="/deploy">部署平台</Link> },
     ] : []),
   ];
   const deploymentMenu = (
@@ -32,10 +39,13 @@ export function AppLayout() {
       mode="inline"
       selectedKeys={[selectedDeploymentItem]}
       items={[
-        { key: '/deploy/projects', icon: <AppstoreOutlined />, label: <Link to="/deploy/projects">发布项目</Link> },
-        { key: '/deploy/deployments', icon: <HistoryOutlined />, label: <Link to="/deploy/deployments">发布记录</Link> },
+        { key: '/deploy', icon: <DashboardOutlined />, label: <Link to="/deploy">概览</Link> },
+        { key: '/deploy/repositories', icon: <GithubOutlined />, label: <Link to="/deploy/repositories">仓库</Link> },
+        { key: '/deploy/projects', icon: <AppstoreOutlined />, label: <Link to="/deploy/projects">应用</Link> },
+        { key: '/deploy/targets', icon: <CloudServerOutlined />, label: <Link to="/deploy/targets">目标主机</Link> },
+        { key: '/deploy/releases', icon: <HistoryOutlined />, label: <Link to="/deploy/releases">发布中心</Link> },
+        { key: '/deploy/audit', icon: <AuditOutlined />, label: <Link to="/deploy/audit">审计</Link> },
       ]}
-      onClick={() => setDrawerOpen(false)}
       style={{ borderInlineEnd: 0, background: 'transparent' }}
     />
   );
@@ -44,17 +54,6 @@ export function AppLayout() {
     <Layout className="min-h-svh">
       <a href="#main" className="skip-link sr-only focus:not-sr-only focus:p-4">跳转到内容</a>
       <Header className="app-header flex h-16 items-center gap-6 px-6!">
-        {showDeploymentNavigation && (
-          <Tooltip title="打开导航">
-            <Button
-              className="ml-4! lg:hidden!"
-              type="text"
-              icon={<MenuOutlined />}
-              aria-label="打开导航"
-              onClick={() => setDrawerOpen(true)}
-            />
-          </Tooltip>
-        )}
         <Link to="/" className="brand-link flex h-full shrink-0 items-center gap-3 font-semibold" aria-label={`${project.name} 首页`}>
           <span className="brand-mark grid size-9 place-items-center rounded-lg font-mono text-sm">sp.</span>
           <span className="flex flex-col leading-tight">
@@ -91,7 +90,7 @@ export function AppLayout() {
       </Header>
       <Layout>
         {showDeploymentNavigation && (
-          <Sider width={216} theme="light" className="app-sidebar hidden! lg:block!">
+          <Sider width="216px" theme="light" className="app-sidebar">
             <nav aria-label="部署平台导航" className="sticky top-0 py-4">{deploymentMenu}</nav>
           </Sider>
         )}
@@ -101,18 +100,6 @@ export function AppLayout() {
           </div>
         </Content>
       </Layout>
-      {showDeploymentNavigation && (
-        <Drawer
-          title="部署平台"
-          placement="left"
-          size={260}
-          open={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          styles={{ body: { padding: '12px 0' } }}
-        >
-          {deploymentMenu}
-        </Drawer>
-      )}
     </Layout>
   );
 }

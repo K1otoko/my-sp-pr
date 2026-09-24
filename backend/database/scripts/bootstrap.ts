@@ -49,9 +49,16 @@ async function bootstrap() {
         roles.push({ name, password, migrator });
         urls.push(url.toString());
       }
+      const sslLines = [
+        `DATABASE_SSL_MODE=${config.ssl ? 'verify-full' : 'disable'}`,
+        process.env.DATABASE_SSL_CA_FILE
+          ? `DATABASE_SSL_CA_FILE=${process.env.DATABASE_SSL_CA_FILE}` : undefined,
+        process.env.DATABASE_SSL_SERVERNAME
+          ? `DATABASE_SSL_SERVERNAME=${process.env.DATABASE_SSL_SERVERNAME}` : undefined,
+      ].filter((line): line is string => Boolean(line));
       const contents = `${existing}${existing.endsWith('\n') || !existing ? '' : '\n'}`
         + `DATABASE_URL=${urls[0]}\nDATABASE_MIGRATION_URL=${urls[1]}\n`
-        + `DATABASE_SSL_MODE=${config.ssl ? 'verify-full' : 'disable'}\n`;
+        + `${sslLines.join('\n')}\n`;
       const temporary = new URL(`.env.bootstrap-${randomBytes(6).toString('hex')}`, destination);
       staged.push({ destination, temporary, contents });
     }

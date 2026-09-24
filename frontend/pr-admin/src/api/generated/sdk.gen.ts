@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateDeployEnvironmentData, CreateDeployEnvironmentErrors, CreateDeployEnvironmentResponses, CreateDeploymentData, CreateDeploymentErrors, CreateDeploymentResponses, GetAdminAuthSessionData, GetAdminAuthSessionErrors, GetAdminAuthSessionResponses, GetAdminHealthData, GetAdminHealthErrors, GetAdminHealthResponses, GetDeployEnvironmentConfigurationData, GetDeployEnvironmentConfigurationErrors, GetDeployEnvironmentConfigurationResponses, GetDeploymentData, GetDeploymentErrors, GetDeploymentResponses, GetDeployProjectData, GetDeployProjectErrors, GetDeployProjectResponses, GetGatewayHealthData, GetGatewayHealthErrors, GetGatewayHealthResponses, ListDeployEnvironmentsData, ListDeployEnvironmentsErrors, ListDeployEnvironmentsResponses, ListDeploymentsData, ListDeploymentsErrors, ListDeploymentsResponses, ListDeployProjectsData, ListDeployProjectsErrors, ListDeployProjectsResponses, ListDeployRefsData, ListDeployRefsErrors, ListDeployRefsResponses, RollbackDeploymentData, RollbackDeploymentErrors, RollbackDeploymentResponses, StartAdminAuthLogoutData, StartAdminAuthLogoutErrors, StartAdminAuthLogoutResponses, SyncDeployProjectsData, SyncDeployProjectsErrors, SyncDeployProjectsResponses, UpdateDeployEnvironmentData, UpdateDeployEnvironmentErrors, UpdateDeployEnvironmentResponses } from './types.gen';
+import type { CreateDeployEnvironmentData, CreateDeployEnvironmentErrors, CreateDeployEnvironmentResponses, CreateDeploymentData, CreateDeploymentErrors, CreateDeploymentResponses, GetAdminAuthSessionData, GetAdminAuthSessionErrors, GetAdminAuthSessionResponses, GetAdminHealthData, GetAdminHealthErrors, GetAdminHealthResponses, GetDeployEnvironmentConfigurationData, GetDeployEnvironmentConfigurationErrors, GetDeployEnvironmentConfigurationResponses, GetDeploymentData, GetDeploymentErrors, GetDeploymentResponses, GetDeployProjectData, GetDeployProjectErrors, GetDeployProjectResponses, GetDeployReleaseData, GetDeployReleaseErrors, GetDeployReleaseResponses, GetDeployRepositoryData, GetDeployRepositoryErrors, GetDeployRepositoryResponses, GetDeployTargetData, GetDeployTargetErrors, GetDeployTargetResponses, GetGatewayHealthData, GetGatewayHealthErrors, GetGatewayHealthResponses, ImportDeployRepositoryData, ImportDeployRepositoryErrors, ImportDeployRepositoryResponses, ListAvailableDeployRepositoriesData, ListAvailableDeployRepositoriesErrors, ListAvailableDeployRepositoriesResponses, ListDeployAuditData, ListDeployAuditErrors, ListDeployAuditResponses, ListDeployEnvironmentsData, ListDeployEnvironmentsErrors, ListDeployEnvironmentsResponses, ListDeploymentsData, ListDeploymentsErrors, ListDeploymentsResponses, ListDeployProjectsData, ListDeployProjectsErrors, ListDeployProjectsResponses, ListDeployRefsData, ListDeployRefsErrors, ListDeployRefsResponses, ListDeployReleasesData, ListDeployReleasesErrors, ListDeployReleasesResponses, ListDeployRepositoriesData, ListDeployRepositoriesErrors, ListDeployRepositoriesResponses, ListDeployTargetsData, ListDeployTargetsErrors, ListDeployTargetsResponses, RollbackDeploymentData, RollbackDeploymentErrors, RollbackDeploymentResponses, StartAdminAuthLogoutData, StartAdminAuthLogoutErrors, StartAdminAuthLogoutResponses, SyncDeployProjectsData, SyncDeployProjectsErrors, SyncDeployProjectsResponses, SyncDeployRepositoryData, SyncDeployRepositoryErrors, SyncDeployRepositoryResponses, UpdateDeployEnvironmentData, UpdateDeployEnvironmentErrors, UpdateDeployEnvironmentResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -44,6 +44,70 @@ export const startAdminAuthLogout = <ThrowOnError extends boolean = false>(optio
         ...options.headers
     }
 });
+
+/**
+ * 查询已同步仓库目录
+ */
+export const listDeployRepositories = <ThrowOnError extends boolean = false>(options?: Options<ListDeployRepositoriesData, ThrowOnError>): RequestResult<ListDeployRepositoriesResponses, ListDeployRepositoriesErrors, ThrowOnError> => (options?.client ?? client).get<ListDeployRepositoriesResponses, ListDeployRepositoriesErrors, ThrowOnError>({ url: '/admin/deploy/repositories', ...options });
+
+/**
+ * 查询 GitHub App 可导入仓库
+ */
+export const listAvailableDeployRepositories = <ThrowOnError extends boolean = false>(options?: Options<ListAvailableDeployRepositoriesData, ThrowOnError>): RequestResult<ListAvailableDeployRepositoriesResponses, ListAvailableDeployRepositoriesErrors, ThrowOnError> => (options?.client ?? client).get<ListAvailableDeployRepositoriesResponses, ListAvailableDeployRepositoriesErrors, ThrowOnError>({ url: '/admin/deploy/repositories/available', ...options });
+
+/**
+ * 校验并导入 GitHub 仓库与发布清单
+ */
+export const importDeployRepository = <ThrowOnError extends boolean = false>(options: Options<ImportDeployRepositoryData, ThrowOnError>): RequestResult<ImportDeployRepositoryResponses, ImportDeployRepositoryErrors, ThrowOnError> => (options.client ?? client).post<ImportDeployRepositoryResponses, ImportDeployRepositoryErrors, ThrowOnError>({
+    url: '/admin/deploy/repositories/import',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 从仓库默认分支同步发布清单
+ */
+export const syncDeployRepository = <ThrowOnError extends boolean = false>(options: Options<SyncDeployRepositoryData, ThrowOnError>): RequestResult<SyncDeployRepositoryResponses, SyncDeployRepositoryErrors, ThrowOnError> => (options.client ?? client).post<SyncDeployRepositoryResponses, SyncDeployRepositoryErrors, ThrowOnError>({
+    url: '/admin/deploy/repositories/{repositoryId}/sync',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * 查询仓库目录详情
+ */
+export const getDeployRepository = <ThrowOnError extends boolean = false>(options: Options<GetDeployRepositoryData, ThrowOnError>): RequestResult<GetDeployRepositoryResponses, GetDeployRepositoryErrors, ThrowOnError> => (options.client ?? client).get<GetDeployRepositoryResponses, GetDeployRepositoryErrors, ThrowOnError>({ url: '/admin/deploy/repositories/{repositoryId}', ...options });
+
+/**
+ * 查询目标主机目录
+ */
+export const listDeployTargets = <ThrowOnError extends boolean = false>(options?: Options<ListDeployTargetsData, ThrowOnError>): RequestResult<ListDeployTargetsResponses, ListDeployTargetsErrors, ThrowOnError> => (options?.client ?? client).get<ListDeployTargetsResponses, ListDeployTargetsErrors, ThrowOnError>({ url: '/admin/deploy/targets', ...options });
+
+/**
+ * 查询目标主机详情（不包含凭据）
+ */
+export const getDeployTarget = <ThrowOnError extends boolean = false>(options: Options<GetDeployTargetData, ThrowOnError>): RequestResult<GetDeployTargetResponses, GetDeployTargetErrors, ThrowOnError> => (options.client ?? client).get<GetDeployTargetResponses, GetDeployTargetErrors, ThrowOnError>({ url: '/admin/deploy/targets/{targetId}', ...options });
+
+/**
+ * 分页查询发布批次
+ */
+export const listDeployReleases = <ThrowOnError extends boolean = false>(options?: Options<ListDeployReleasesData, ThrowOnError>): RequestResult<ListDeployReleasesResponses, ListDeployReleasesErrors, ThrowOnError> => (options?.client ?? client).get<ListDeployReleasesResponses, ListDeployReleasesErrors, ThrowOnError>({ url: '/admin/deploy/releases', ...options });
+
+/**
+ * 查询批次、发布项和迁移门禁
+ */
+export const getDeployRelease = <ThrowOnError extends boolean = false>(options: Options<GetDeployReleaseData, ThrowOnError>): RequestResult<GetDeployReleaseResponses, GetDeployReleaseErrors, ThrowOnError> => (options.client ?? client).get<GetDeployReleaseResponses, GetDeployReleaseErrors, ThrowOnError>({ url: '/admin/deploy/releases/{releaseId}', ...options });
+
+/**
+ * 分页查询发布审计摘要
+ */
+export const listDeployAudit = <ThrowOnError extends boolean = false>(options?: Options<ListDeployAuditData, ThrowOnError>): RequestResult<ListDeployAuditResponses, ListDeployAuditErrors, ThrowOnError> => (options?.client ?? client).get<ListDeployAuditResponses, ListDeployAuditErrors, ThrowOnError>({ url: '/admin/deploy/audit', ...options });
 
 /**
  * 查询可发布项目

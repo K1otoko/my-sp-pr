@@ -46,14 +46,16 @@ const envSchema = z.object({
   const githubFields = [
     value.GITHUB_APP_ID,
     value.GITHUB_APP_PRIVATE_KEY_FILE,
-    value.GITHUB_INSTALLATION_ID,
-    value.GITHUB_REPOSITORY,
     value.GITHUB_ALLOWED_OWNERS,
     value.GITHUB_RUNNER_TARGETS,
     value.GITHUB_WEBHOOK_SECRET,
   ];
   if (githubFields.some(Boolean) && !githubFields.every(Boolean)) {
     context.addIssue({ code: 'custom', path: ['GITHUB_APP_ID'], message: 'GitHub 发布配置必须完整提供' });
+  }
+  if (Boolean(value.GITHUB_INSTALLATION_ID) !== Boolean(value.GITHUB_REPOSITORY)
+    || ((value.GITHUB_INSTALLATION_ID || value.GITHUB_REPOSITORY) && !githubFields.every(Boolean))) {
+    context.addIssue({ code: 'custom', path: ['GITHUB_REPOSITORY'], message: '兼容仓库与 installation 必须成对配置' });
   }
   if (value.NODE_ENV !== 'production') return;
   for (const [key, originValue] of [
@@ -102,8 +104,8 @@ export const env = {
     apiOrigin: parsed.data.GITHUB_API_ORIGIN,
     appId: parsed.data.GITHUB_APP_ID!,
     privateKeyFile: resolve(fileURLToPath(new URL('../../', import.meta.url)), parsed.data.GITHUB_APP_PRIVATE_KEY_FILE!),
-    installationId: parsed.data.GITHUB_INSTALLATION_ID!,
-    repository: parsed.data.GITHUB_REPOSITORY!,
+    installationId: parsed.data.GITHUB_INSTALLATION_ID,
+    repository: parsed.data.GITHUB_REPOSITORY,
     allowedOwners,
     runnerTargets,
     webhookSecret: parsed.data.GITHUB_WEBHOOK_SECRET!,

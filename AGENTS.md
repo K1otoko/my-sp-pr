@@ -204,13 +204,16 @@ API 变化修改源契约；输出映射变化修改 `scripts/api-projects.ts`�
 
 ### 发布平台边界
 
-- `deploy.manifest.json` 是项目/preset/变量白名单事实源；Admin 首版只同步当前仓库，不接受任意构建命令。
+- `deploy.manifest.json` 是项目/preset/变量白名单事实源；Admin 支持 App 可见且 owner 在白名单中的仓库导入/同步，不接受任意构建命令。V1/V2 解析器兼容，当前清单为 V2；显式 defaultRef 校验存在，缺省回退仓库默认分支，控制清单固定默认分支 SHA。
 - Admin 只创建 GitHub Deployment、保存审计与状态；不 clone/构建仓库、不保存 GitHub token 或 secret value、不直接 SSH。
 - branch/tag/SHA 在提交时解析为不可变 commit SHA。production 只允许环境配置的主分支/版本标签；不推荐每项目永久分支。
 - 每项目/环境使用独立 GitHub Environment。非敏感变量可读取，secret 只检查名称；migration secret 不进入长期 runtime.env。
 - GitHub-hosted runner 执行 install/build；目标 self-hosted runner 只下载制品、校验、迁移、切换、reload 和健康检查，不执行源码依赖安装。
 - 目标目录为 `/srv/my-sp-pr/<unit>/<environment>`，配置为 `/etc/my-sp-pr/<unit>/<environment>`；保留最近 5 个成功版本。代码可回滚，数据库迁移不自动回滚。
 - runner target 首版仅支持 `staging`、`production` 固定 label。目标 runner 只能绑定受控仓库，不运行 PR/fork workflow。
+- 部署平台 M1/M2 已增加目录/批次/门禁模型、7 个 super 只读 API、仓库发现/导入/同步和 Manifest V2；Admin 迁移到 `0005`。installation token 分别缓存，所有项目 GitHub 操作使用所属仓库；旧仓库/installation 环境变量仅作成对可选兼容配置。导入 UI、Agent、精确 runner 路由和新批次执行仍未实现，不把目录就绪表述为三机发布已可用。
+- 旧发布事务同步 legacy batch/item；legacy target 停用且 pending，旧迁移请求为 `legacy_unknown`。原生活动 batch 唯一索引排除 legacy；后续切换必须关闭旧写入口并等待旧活动任务结束，不同时启用两套编排。
+- 已确认生产使用公网链路：前端 Nginx 经校验证书的后端 TLS 入口访问 Gateway，入口限制前端出口 IP；Gateway/业务 API/PostgreSQL 保留 loopback。frp 不等同可信私网；域名及生产输入见 README，凭据不得写入规则或源码。
 
 ## 7. Gateway 与环境约定
 

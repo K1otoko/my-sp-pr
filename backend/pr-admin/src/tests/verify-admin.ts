@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { Request, Response } from 'express';
 import { env } from '../config/env.js';
 import { database, db } from '../db/index.js';
-import { parseDeployManifest } from '../deploy/manifest.js';
-import type { GitHubClient } from '../github/github-client.js';
 import { verifyGitHubWebhook } from '../github/webhook.js';
 import { requireSuper } from '../middlewares/require-super.js';
 import { adminSessionRepository } from '../repositories/admin-session.repository.js';
@@ -15,6 +12,11 @@ import { adminAuthService } from '../services/admin-auth.service.js';
 import { deploymentService } from '../services/deployment.service.js';
 import { AppError } from '../utils/app-error.js';
 import type { AdminOidcClient } from '../auth/oidc-client.js';
+import { deployCatalogRepository } from '../repositories/deploy-catalog.repository.js';
+import { deployCatalogService } from '../services/deploy-catalog.service.js';
+import { verifyDeployCatalog } from './verify-deploy-catalog.js';
+import { githubFixture, verifyRepositories } from './verify-github-repositories.js';
+import { verifyManifest } from './verify-manifest.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const actor = {
@@ -24,50 +26,17 @@ const actor = {
   role: 'super' as const,
 };
 
-async function verify() {
+async function verify(fixture: Awaited<ReturnType<typeof githubFixture>>) {
   assert(process.env.ADMIN_VERIFY_DATABASE?.startsWith('my_sp_pr_verify_admin_'));
   await database.checkReady();
-  const manifest = parseDeployManifest(await readFile(`${root}/deploy.manifest.json`, 'utf8'));
-  assert.equal(manifest.units.length, 7);
+  await verifyManifest(root);
 
   const commit = {
     sha: 'a'.repeat(40),
     url: 'https://github.com/example/my-sp-pr/commit/a',
     message: 'verified commit',
   };
-  let githubDeployments = 0;
-  const github = {
-    repository: async () => ({
-      id: 123,
-      full_name: 'example/my-sp-pr',
-      default_branch: 'main',
-      html_url: 'https://github.com/example/my-sp-pr',
-      owner: { login: 'example' },
-    }),
-    resolveRef: async () => commit,
-    manifest: async () => JSON.stringify(manifest),
-    refs: async () => ({
-      defaultBranch: 'main',
-      branches: [{ name: 'main', sha: commit.sha }],
-      tags: [],
-    }),
-    environment: async () => ({
-      variables: new Map(),
-      secrets: new Set(),
-      settingsUrl: 'https://github.com/example/my-sp-pr/settings/environments',
-    }),
-    createDeployment: async () => String(9000 + ++githubDeployments),
-  } as unknown as GitHubClient;
-  const githubConfig = {
-    apiOrigin: 'https://api.github.com',
-    appId: 1,
-    privateKeyFile: '/not-used',
-    installationId: 2,
-    repository: 'example/my-sp-pr',
-    allowedOwners: new Set(['example']),
-    runnerTargets: new Set(['staging', 'production']),
-    webhookSecret: 'verification-webhook-secret-value-123456',
-  };
+  const { client: github, config: githubConfig } = fixture;
   const repository = deployRepository(db);
   const service = deploymentService(repository, github, githubConfig);
   const synchronized = await service.synchronize(actor, '22222222-2222-4222-8222-222222222222');
@@ -79,7 +48,7 @@ async function verify() {
     runnerTarget: 'staging',
     publicOrigin: 'https://admin.example.com',
     healthUrl: 'https://admin.example.com/release.json',
-    allowedBranches: ['main'],
+    allowedBranches: ['master'],
     allowedTagPattern: 'v*',
     production: false,
     migrationsAllowed: false,
@@ -88,7 +57,7 @@ async function verify() {
   const deployment = await service.createDeployment({
     projectId: project.id,
     environmentId: environment.id,
-    ref: 'main',
+    ref: 'master',
     runMigration: false,
     actor,
     requestId: '44444444-4444-4444-8444-444444444444',
@@ -97,7 +66,7 @@ async function verify() {
   await assert.rejects(() => service.createDeployment({
     projectId: project.id,
     environmentId: environment.id,
-    ref: 'main',
+    ref: 'master',
     runMigration: false,
     actor,
     requestId: '55555555-5555-4555-8555-555555555555',
@@ -126,7 +95,17 @@ async function verify() {
   }, webhookBody);
   await service.receiveEvent(event);
   await service.receiveEvent(event);
+  await assert.rejects(() => service.receiveEvent({ ...event, installationId: '3' }),
+    (error: unknown) => error instanceof AppError && error.code === 'WEBHOOK_INVALID');
+  await assert.rejects(() => service.receiveEvent({ ...event, repositoryFullName: 'example/other' }),
+    (error: unknown) => error instanceof AppError && error.code === 'WEBHOOK_INVALID');
   assert.equal((await service.getDeployment(deployment.id)).status, 'succeeded');
+  await service.receiveEvent({ ...event, deliveryId: 'late-queued', githubStatusId: '72', status: 'queued' });
+  assert.equal((await service.getDeployment(deployment.id)).status, 'succeeded');
+  const rollback = await service.rollback({
+    deploymentId: deployment.id, confirmation: project.slug, actor, requestId: 'verify-rollback',
+  });
+  await repository.markError(rollback.id, 'verification', 'VERIFICATION_FAILURE');
   assert.throws(() => verifyGitHubWebhook(githubConfig, {
     signature: 'sha256=invalid',
     delivery: 'delivery-2',
@@ -146,11 +125,11 @@ async function verify() {
   });
   assert(await sessions.consumeFlow({ token: flow, state, binding }));
   assert.equal(await sessions.consumeFlow({ token: flow, state, binding }), undefined);
-  let role: 'super' | 'user' = 'super';
+  let role: 'super' | 'admin' | 'user' = 'super';
   const oidc = {
     identity: async () => {
       if (role === 'user') throw new AppError(403, 'FORBIDDEN', 'denied');
-      return actor;
+      return { ...actor, role };
     },
     refresh: async () => ({
       access_token: 'refreshed-access',
@@ -178,6 +157,11 @@ async function verify() {
   assert.equal(principal?.user.role, 'super');
   (request.headers as Record<string, string>).origin = env.adminOrigin;
   auth.verifyCsrf(request, principal!, auth.csrf(principal!));
+  await verifyDeployCatalog({
+    root, auth, deployments: service, catalog: deployCatalogService(deployCatalogRepository(db)),
+    csrfToken: auth.csrf(principal!), adminOrigin: env.adminOrigin,
+    cookie: request.headers.cookie!, setRole: (nextRole) => { role = nextRole; },
+  });
   role = 'user';
   assert.equal(await auth.readSession(request, response), undefined);
 
@@ -187,13 +171,18 @@ async function verify() {
   } as unknown as Response, (error?: unknown) => { middlewareError = error; });
   assert(middlewareError instanceof AppError && middlewareError.statusCode === 403);
   console.log('[admin-verify] PASS one-use flow, refresh rotation, online role revocation, CSRF and super authorization.');
+  await verifyRepositories(fixture, actor);
 }
 
+let fixture: Awaited<ReturnType<typeof githubFixture>> | undefined;
 try {
-  await verify();
+  fixture = await githubFixture(root);
+  await verify(fixture);
 } catch (error) {
   console.error('[admin-verify] FAIL', error instanceof Error ? error.name : 'UnknownError');
+  if (error instanceof Error) console.error(error.stack?.split('\n').find((line) => /^\s+at /u.test(line)));
   process.exitCode = 1;
 } finally {
+  await fixture?.close();
   await database.close();
 }

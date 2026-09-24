@@ -1,14 +1,29 @@
 import { Router } from 'express';
 import { apiContract, expressPath, fullPath, serviceContract } from '../api/index.js';
 import type { deployHandlers } from '../controllers/deploy.controller.js';
+import type { deployCatalogHandlers } from '../controllers/deploy-catalog.controller.js';
 import { requireAuth } from '../middlewares/require-auth.js';
 import { requireSuper } from '../middlewares/require-super.js';
 import type { AdminAuthService } from '../services/admin-auth.service.js';
 
-export function deployRouter(auth: AdminAuthService, handlers: ReturnType<typeof deployHandlers>) {
+export function deployRouter(
+  auth: AdminAuthService,
+  handlers: ReturnType<typeof deployHandlers>,
+  catalog: ReturnType<typeof deployCatalogHandlers>,
+) {
   const router = Router();
   router.use(requireAuth(auth), requireSuper);
   const entries = [
+    [apiContract.listAvailableDeployRepositories, handlers.availableRepositories],
+    [apiContract.importDeployRepository, handlers.importRepository],
+    [apiContract.syncDeployRepository, handlers.synchronizeRepository],
+    [apiContract.listDeployRepositories, catalog.listRepositories],
+    [apiContract.getDeployRepository, catalog.getRepository],
+    [apiContract.listDeployTargets, catalog.listTargets],
+    [apiContract.getDeployTarget, catalog.getTarget],
+    [apiContract.listDeployReleases, catalog.listReleases],
+    [apiContract.getDeployRelease, catalog.getRelease],
+    [apiContract.listDeployAudit, catalog.listAudit],
     [apiContract.syncDeployProjects, handlers.synchronizeProjects],
     [apiContract.listDeployProjects, handlers.listProjects],
     [apiContract.getDeployProject, handlers.getProject],

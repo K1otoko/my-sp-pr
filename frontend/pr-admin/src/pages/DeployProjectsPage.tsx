@@ -1,55 +1,20 @@
-import { App, Button, Empty, Table, Tag, Typography } from 'antd';
-import { ReloadOutlined, RightOutlined } from '@ant-design/icons';
+import {
+  Button, Empty, Table, Tag, Typography,
+} from 'antd';
+import { RightOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
-import { syncDeployProjects } from '../api/generated/sdk.gen';
 import type { DeployProject } from '../api/generated/types.gen';
-import { apiClient, requestApi, unwrapResponse } from '../api/client';
+import { DeploymentPageHeader } from '../components/DeploymentPageHeader';
 import { DeploymentStatus } from '../components/DeploymentStatus';
-import { useAdminSession } from '../hooks/useAdminSession';
-import { useApiAction } from '../hooks/useApiAction';
 import { useDeployProjects } from '../hooks/useDeployData';
 import { formatDateTime, shortSha } from '../utils/format';
 
 export function DeployProjectsPage() {
-  const { message } = App.useApp();
-  const session = useAdminSession();
   const projects = useDeployProjects();
-  const synchronize = useApiAction(async (signal) => {
-    if (!session.session?.authenticated) return;
-    const result = unwrapResponse(await requestApi(
-      (active) => syncDeployProjects({
-        client: apiClient,
-        throwOnError: true,
-        signal: active,
-        body: { csrfToken: session.session!.authenticated ? session.session!.csrfToken : '' },
-      }),
-      signal,
-    ));
-    await projects.refreshAsync();
-    return result;
-  }, {
-    onSuccess: (result) => {
-      if (result) void message.success(`已同步 ${result.synchronized} 个发布项目`);
-    },
-    onError: (error) => void message.error(error.message),
-  });
 
   return (
     <div className="space-y-6">
-      <section className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <Typography.Title level={1} className="mb-1! text-2xl!">发布项目</Typography.Title>
-          <Typography.Text type="secondary">每个 unit 独立构建、发布和回滚。</Typography.Text>
-        </div>
-        <Button
-          type="primary"
-          icon={<ReloadOutlined spin={synchronize.loading} />}
-          loading={synchronize.loading}
-          onClick={() => synchronize.run()}
-        >
-          同步清单
-        </Button>
-      </section>
+      <DeploymentPageHeader title="应用" description="查看可独立构建和发布的应用单元。" />
       <div className="surface-panel overflow-hidden">
         <Table
           rowKey="id"

@@ -58,6 +58,14 @@
     background: var(--app-surface);
   }
 
+  .deployment-metric {
+    border-block-end: 1px solid var(--app-border);
+  }
+
+  .deployment-metric:last-child {
+    border-block-end: 0;
+  }
+
   .brand-link {
     color: var(--app-text);
   }
@@ -89,6 +97,27 @@
   .skip-link {
     background: var(--app-surface);
     color: var(--app-link);
+  }
+}
+
+@media (min-width: 640px) {
+  .deployment-metric:nth-child(odd) {
+    border-inline-end: 1px solid var(--app-border);
+  }
+
+  .deployment-metric:nth-last-child(-n + 2) {
+    border-block-end: 0;
+  }
+}
+
+@media (min-width: 1280px) {
+  .deployment-metric {
+    border-block-end: 0;
+    border-inline-end: 1px solid var(--app-border);
+  }
+
+  .deployment-metric:last-child {
+    border-inline-end: 0;
   }
 }
 

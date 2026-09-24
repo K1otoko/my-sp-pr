@@ -5,6 +5,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { parseDeployManifest } from './manifest.mjs';
 
 function argument(name) {
   const index = process.argv.indexOf(`--${name}`);
@@ -62,16 +63,10 @@ const controlRoot = path.resolve(optionalArgument('control', '.'));
 if (!/^[0-9a-f]{40}$/u.test(sha) || !/^[0-9a-f-]{36}$/u.test(deploymentId)
   || !/^[0-9]+$/u.test(githubDeploymentId)) throw new Error('发布标识格式无效');
 
-const manifest = JSON.parse(await readFile(path.join(controlRoot, 'deploy.manifest.json'), 'utf8'));
-if (manifest.version !== 1 || !Array.isArray(manifest.units)) throw new Error('deploy.manifest.json 版本无效');
+const manifest = parseDeployManifest(await readFile(path.join(controlRoot, 'deploy.manifest.json'), 'utf8'));
 const unit = manifest.units.find((candidate) => candidate.id === unitId);
 if (!unit || !['pnpm-vite-static-v1', 'pnpm-node-service-v1'].includes(unit.preset)) {
   throw new Error('发布 unit 或 preset 不受支持');
-}
-for (const value of [unit.packagePath, unit.artifactPath]) {
-  if (typeof value !== 'string' || value.startsWith('/') || value.split('/').includes('..')) {
-    throw new Error('manifest 路径无效');
-  }
 }
 
 let buildVariables = {};

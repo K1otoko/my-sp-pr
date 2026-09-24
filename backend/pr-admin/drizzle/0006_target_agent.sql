@@ -1,0 +1,2 @@
+ALTER TABLE "admin"."deploy_environments" ALTER COLUMN "runner_target" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "admin"."deploy_target_credentials" ADD COLUMN "recent_nonces" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -40,6 +40,7 @@ const settingsSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_SSL_MODE: z.enum(['disable', 'verify-full']).optional(),
   DATABASE_SSL_CA_FILE: z.string().min(1).optional(),
+  DATABASE_SSL_SERVERNAME: z.hostname().optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(20).default(5),
   DATABASE_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(2000),
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).max(6000).default(3000),
@@ -52,6 +53,7 @@ export interface DatabaseConfig {
   connectionString: string;
   databaseName: string;
   ssl: ClientConfig['ssl'];
+  sslServername?: string;
   enableChannelBinding: boolean;
   poolMax: number;
   connectTimeoutMs: number;
@@ -101,6 +103,9 @@ export function parseDatabaseConfig(
   if (settings.DATABASE_SSL_CA_FILE && (sslMode !== 'verify-full' || !isAbsolute(settings.DATABASE_SSL_CA_FILE))) {
     invalid('DATABASE_SSL_CA_FILE', '需要 verify-full 和绝对路径');
   }
+  if (settings.DATABASE_SSL_SERVERNAME && (sslMode !== 'verify-full' || !settings.DATABASE_SSL_CA_FILE)) {
+    invalid('DATABASE_SSL_SERVERNAME', '需要 verify-full 和 DATABASE_SSL_CA_FILE');
+  }
   let ca: string | undefined;
   if (settings.DATABASE_SSL_CA_FILE) {
     try { ca = readFileSync(settings.DATABASE_SSL_CA_FILE, 'utf8'); } catch { invalid('DATABASE_SSL_CA_FILE', '无法读取'); }
@@ -116,7 +121,12 @@ export function parseDatabaseConfig(
     mode,
     connectionString: url.toString(),
     databaseName,
-    ssl: sslMode === 'disable' ? false : { rejectUnauthorized: true, ...(ca ? { ca } : {}) },
+    ssl: sslMode === 'disable' ? false : {
+      rejectUnauthorized: true,
+      ...(ca ? { ca } : {}),
+      ...(settings.DATABASE_SSL_SERVERNAME ? { servername: settings.DATABASE_SSL_SERVERNAME } : {}),
+    },
+    sslServername: settings.DATABASE_SSL_SERVERNAME,
     // pg negotiates SCRAM-SHA-256-PLUS where offered; this is not a strict require policy.
     enableChannelBinding: sslMode === 'verify-full' && binding !== 'disable',
     poolMax: settings.DATABASE_POOL_MAX,

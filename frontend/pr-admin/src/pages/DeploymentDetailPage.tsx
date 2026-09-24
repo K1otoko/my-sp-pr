@@ -50,7 +50,7 @@ export function DeploymentDetailPage() {
   return (
     <div className="space-y-6">
       <Breadcrumb items={[
-        { title: <Link to="/deploy/deployments">发布记录</Link> },
+        { title: <Link to="/deploy/releases">发布中心</Link> },
         { title: data ? `${data.projectSlug} / ${shortSha(data.resolvedSha)}` : '发布详情' },
       ]}
       />

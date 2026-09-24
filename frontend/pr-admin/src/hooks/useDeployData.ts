@@ -9,7 +9,25 @@ import {
   listDeployProjects,
   listDeployRefs,
 } from '../api/generated/sdk.gen';
+import type { DeployProject } from '../api/generated/types.gen';
 import { apiClient, requestApi, unwrapResponse } from '../api/client';
+
+export type DeployTargetBinding = {
+  environmentId: string;
+  environmentName: string;
+  projectId: string;
+  projectName: string;
+  projectKind: DeployProject['kind'];
+  production: boolean;
+};
+
+export type DeployTargetSummary = {
+  key: string;
+  bindings: DeployTargetBinding[];
+  environmentNames: string[];
+  projectKinds: DeployProject['kind'][];
+  production: boolean;
+};
 
 function useAbortable<T>(loader: (signal: AbortSignal) => Promise<T>, refreshDeps: unknown[] = []) {
   const controller = useRef<AbortController | null>(null);
@@ -41,6 +59,49 @@ export function useAllDeployments() {
     }),
     signal,
   )));
+}
+
+export function useDeployTargetSummaries() {
+  return useAbortable(async (signal) => {
+    const projects = unwrapResponse(await requestApi(
+      (active) => listDeployProjects({ client: apiClient, throwOnError: true, signal: active }),
+      signal,
+    ));
+    const environments = await Promise.all(projects.map(async (project) => ({
+      project,
+      environments: unwrapResponse(await requestApi(
+        (active) => listDeployEnvironments({
+          client: apiClient,
+          throwOnError: true,
+          signal: active,
+          path: { projectId: project.id },
+        }),
+        signal,
+      )),
+    })));
+    const targets = new Map<string, DeployTargetBinding[]>();
+    for (const entry of environments) {
+      for (const environment of entry.environments) {
+        const bindings = targets.get(environment.runnerTarget) ?? [];
+        bindings.push({
+          environmentId: environment.id,
+          environmentName: environment.name,
+          projectId: entry.project.id,
+          projectName: entry.project.name,
+          projectKind: entry.project.kind,
+          production: environment.production,
+        });
+        targets.set(environment.runnerTarget, bindings);
+      }
+    }
+    return [...targets.entries()].map(([key, bindings]): DeployTargetSummary => ({
+      key,
+      bindings,
+      environmentNames: [...new Set(bindings.map((item) => item.environmentName))].sort(),
+      projectKinds: [...new Set(bindings.map((item) => item.projectKind))].sort(),
+      production: bindings.some((item) => item.production),
+    })).sort((left, right) => left.key.localeCompare(right.key));
+  });
 }
 
 export function useProjectWorkspace(projectId: string) {

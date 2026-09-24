@@ -13,7 +13,7 @@ import { pgSchema, serial, text } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { checkIdentity } from '../src/client.js';
 import {
-  connectionOptions, createDatabase, databaseErrorCode, databaseIdentity, databaseNamespaces,
+  connectionOptions, createDatabase, databaseErrorCode, databaseIdentity, databaseNamespaces, DatabaseError,
   parseDatabaseConfig, runMigrations, type DatabaseConfig, type DatabaseNamespace,
 } from '../src/index.js';
 
@@ -29,6 +29,7 @@ interface Running {
   exited: () => boolean;
 }
 const children: Running[] = [];
+const reservedPorts = new Set<number>();
 let temporary: string | undefined;
 let stage = 'configuration';
 
@@ -94,13 +95,18 @@ async function stop(running: ReturnType<typeof start>, signal: NodeJS.Signals = 
 }
 
 async function freePort() {
-  const listener = createServer();
-  listener.listen(0, '127.0.0.1');
-  await once(listener, 'listening');
-  const address = listener.address();
-  assert(address && typeof address !== 'string');
-  await new Promise<void>((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
-  return address.port;
+  while (true) {
+    const listener = createServer();
+    listener.listen(0, '127.0.0.1');
+    await once(listener, 'listening');
+    const address = listener.address();
+    assert(address && typeof address !== 'string');
+    await new Promise<void>((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
+    if (!reservedPorts.has(address.port)) {
+      reservedPorts.add(address.port);
+      return address.port;
+    }
+  }
 }
 
 async function waitFor(condition: () => Promise<boolean>, milliseconds = 15_000) {
@@ -114,19 +120,43 @@ async function waitFor(condition: () => Promise<boolean>, milliseconds = 15_000)
 
 async function response(port: number, path: string, expected: number) {
   const result = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(7500) });
-  assert.equal(result.status, expected, path);
   const body: unknown = await result.json();
+  if (result.status !== expected) {
+    const reported = body && typeof body === 'object' && 'error' in body
+      && body.error && typeof body.error === 'object' && 'code' in body.error
+      && typeof body.error.code === 'string' ? body.error.code : `HTTP_${result.status}`;
+    throw new DatabaseError(reported);
+  }
   return { result, body };
 }
 
 async function waitHealthy(port: number, path: string, running: ReturnType<typeof start>) {
-  await waitFor(async () => {
-    assert(!running.exited(), 'HTTP process exited before listening');
-    try {
-      await response(port, path, 200);
-      return true;
-    } catch { return false; }
-  });
+  let lastErrorCode = 'VERIFY_WAIT_TIMEOUT';
+  try {
+    await waitFor(async () => {
+      if (running.exited()) {
+        const reported = running.output().match(/(?:检查失败|关闭失败)：?\\s*([A-Z][A-Z0-9_]{1,49})/u)?.[1];
+        throw new DatabaseError(reported ?? 'HTTP_PROCESS_EXITED');
+      }
+      try {
+        const result = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(7500) });
+        if (result.status === 200) return true;
+        const body: unknown = await result.json();
+        if (body && typeof body === 'object' && 'error' in body
+          && body.error && typeof body.error === 'object' && 'code' in body.error
+          && typeof body.error.code === 'string') lastErrorCode = body.error.code;
+      } catch {
+        // Retry until the bounded startup deadline.
+      }
+      return false;
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'VERIFY_WAIT_TIMEOUT') {
+      stage += ` / ${lastErrorCode}`;
+      throw new DatabaseError(lastErrorCode);
+    }
+    throw error;
+  }
 }
 
 function movedConfig(config: DatabaseConfig): DatabaseConfig {
@@ -141,6 +171,7 @@ async function verify() {
     DATABASE_MIGRATION_URL: process.env.DATABASE_VERIFY_ADMIN_URL,
     DATABASE_SSL_MODE: process.env.DATABASE_SSL_MODE,
     DATABASE_SSL_CA_FILE: process.env.DATABASE_SSL_CA_FILE,
+    DATABASE_SSL_SERVERNAME: process.env.DATABASE_SSL_SERVERNAME,
     DATABASE_CONNECT_TIMEOUT_MS: '10000',
   }, 'migration');
   const services = [];
@@ -149,6 +180,8 @@ async function verify() {
     env.DATABASE_URL = process.env[`DATABASE_VERIFY_${namespace.toUpperCase()}_RUNTIME_URL`] ?? env.DATABASE_URL!;
     env.DATABASE_MIGRATION_URL = process.env[`DATABASE_VERIFY_${namespace.toUpperCase()}_MIGRATION_URL`] ?? env.DATABASE_MIGRATION_URL!;
     env.DATABASE_SSL_MODE = process.env.DATABASE_SSL_MODE ?? env.DATABASE_SSL_MODE!;
+    env.DATABASE_SSL_CA_FILE = process.env.DATABASE_SSL_CA_FILE ?? env.DATABASE_SSL_CA_FILE;
+    env.DATABASE_SSL_SERVERNAME = process.env.DATABASE_SSL_SERVERNAME ?? env.DATABASE_SSL_SERVERNAME;
     const runtime = parseDatabaseConfig(env, 'runtime');
     const migration = parseDatabaseConfig(env, 'migration');
     for (const config of [runtime, migration]) {
@@ -172,6 +205,7 @@ async function verify() {
     { DATABASE_URL: `${auth.runtime.connectionString}?options=unsafe` },
     { DATABASE_POOL_MAX: '0' }, { DATABASE_QUERY_TIMEOUT_MS: '3000' },
     { NODE_ENV: 'production', DATABASE_SSL_MODE: '' },
+    { DATABASE_SSL_SERVERNAME: 'db.example.internal', DATABASE_SSL_CA_FILE: '' },
   ]) {
     assert.throws(() => parseDatabaseConfig({
       DATABASE_URL: auth.runtime.connectionString,
@@ -341,14 +375,21 @@ async function verify() {
       DATABASE_SSL_MODE: service.runtime.ssl ? 'verify-full' : 'disable',
       AUTH_CONFIG_FILE: authConfigFile, SSO_PUBLIC_ORIGIN: 'http://localhost:5175',
       ...(process.env.DATABASE_SSL_CA_FILE ? { DATABASE_SSL_CA_FILE: process.env.DATABASE_SSL_CA_FILE } : {}),
+      ...(process.env.DATABASE_SSL_SERVERNAME
+        ? { DATABASE_SSL_SERVERNAME: process.env.DATABASE_SSL_SERVERNAME } : {}),
     });
     const runningServices = [];
     for (const service of services) {
+      stage = `HTTP ${service.namespace} startup`;
       const running = start(service.server, environment(service));
       await waitHealthy(service.port, `/api/${service.namespace}/health`, running);
+      stage = `HTTP ${service.namespace} readiness response`;
       const ready = await response(service.port, `/api/${service.namespace}/ready`, 200);
+      stage = `HTTP ${service.namespace} readiness headers`;
       assert.equal(ready.result.headers.get('cache-control'), 'no-store');
+      stage = `HTTP ${service.namespace} readiness body`;
       assert(ready.body && typeof ready.body === 'object' && 'data' in ready.body);
+      stage = `HTTP ${service.namespace} readiness payload`;
       assert.deepEqual({ ...ready.body.data as object, timestamp: undefined }, {
         status: 'ready', service: `pr-${service.namespace}`, timestamp: undefined, checks: { database: 'ok' },
       });
@@ -358,30 +399,43 @@ async function verify() {
     const upstreams = Object.fromEntries(services.map((service) => [
       `${service.namespace.toUpperCase()}_SERVICE_URL`, `http://127.0.0.1:${service.port}`,
     ]));
+    stage = 'HTTP gateway startup';
     const gateway = start(join(root, 'backend/gateway/dist/server.js'), {
       NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(gatewayPort), ...upstreams,
     });
     await waitHealthy(gatewayPort, '/api/health', gateway);
     for (const service of services) {
+      stage = `HTTP gateway ${service.namespace} health`;
       await response(gatewayPort, `/api/${service.namespace}/health`, 200);
+      stage = `HTTP gateway ${service.namespace} internal route`;
       await response(gatewayPort, `/api/${service.namespace}/ready`, 404);
     }
     for (const service of services) {
+      stage = `HTTP ${service.namespace} outage revoke`;
       const identity = databaseIdentity(service.namespace);
       await provision.query(`REVOKE CONNECT ON DATABASE ${quote(databaseName)} FROM ${quote(identity.appRole)}`);
-      await provision.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND usename=$2',
+      await provision.query(
+        'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND usename=$2',
         [databaseName, identity.appRole]);
+      stage = `HTTP ${service.namespace} outage readiness`;
       const unavailable = await response(service.port, `/api/${service.namespace}/ready`, 503);
+      stage = `HTTP ${service.namespace} outage payload`;
       assert.deepEqual(unavailable.body, {
         success: false, error: { code: 'DATABASE_NOT_READY', message: '服务尚未就绪' },
       });
+      stage = `HTTP gateway ${service.namespace} outage health`;
       await response(gatewayPort, `/api/${service.namespace}/health`, 200);
       if (service.namespace === 'auth') {
+        stage = 'HTTP auth outage login';
         const failedLogin = await fetch(`http://127.0.0.1:${gatewayPort}/api/auth/portal/start`, { redirect: 'manual' });
         assert.equal(failedLogin.status, 500, 'database outage must not start a successful identity flow');
       }
+      stage = `HTTP ${service.namespace} recovery grant`;
       await provision.query(`GRANT CONNECT ON DATABASE ${quote(databaseName)} TO ${quote(identity.appRole)}`);
-      await response(service.port, `/api/${service.namespace}/ready`, 200);
+      stage = `HTTP ${service.namespace} recovery readiness`;
+      const runningService = runningServices.find((item) => item.namespace === service.namespace);
+      assert(runningService);
+      await waitHealthy(service.port, `/api/${service.namespace}/ready`, runningService.running);
     }
     for (const [index, service] of runningServices.entries()) {
       service.running.child.kill(index % 2 ? 'SIGINT' : 'SIGTERM');
@@ -397,12 +451,14 @@ async function verify() {
         url.password = randomBytes(24).toString('hex');
         return url.toString();
       })() }],
-      ['unreachable', { DATABASE_URL: 'postgresql://invalid:invalid@127.0.0.1:1/invalid', DATABASE_SSL_MODE: 'disable' }],
+      ['unreachable', { DATABASE_URL: 'postgresql://invalid:invalid@127.0.0.1:1/invalid' }],
     ] as const) {
+      stage = `HTTP auth startup failure ${label}`;
       const failed = start(auth.server, { ...environment(auth), ...overrides });
       assert.equal(await bounded(failed.exit), 1, label);
       assert(!failed.output().includes('服务已启动'), label);
     }
+    stage = 'HTTP auth occupied port startup failure';
     const occupied = createServer();
     occupied.listen(auth.port, '127.0.0.1');
     await once(occupied, 'listening');
@@ -412,6 +468,7 @@ async function verify() {
       assert(failed.output().includes('已被占用'));
     } finally { await new Promise<void>((resolve) => occupied.close(() => resolve())); }
     // A local TCP listener deliberately never completes a PostgreSQL handshake.
+    stage = 'HTTP auth stalled database startup signal';
     const sockets = new Set<Socket>();
     const stalled = createServer((socket) => {
       sockets.add(socket);
@@ -423,7 +480,7 @@ async function verify() {
       const address = stalled.address();
       assert(address && typeof address !== 'string');
       const starting = start(auth.server, {
-        ...environment(auth), DATABASE_SSL_MODE: 'disable',
+        ...environment(auth),
         DATABASE_URL: `postgresql://invalid:invalid@127.0.0.1:${address.port}/invalid`,
       });
       await waitFor(async () => sockets.size > 0);

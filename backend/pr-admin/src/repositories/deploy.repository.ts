@@ -1,10 +1,11 @@
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { AdminIdentity } from '../auth/oidc-client.js';
 import type { DeployManifestUnit } from '../deploy/manifest.js';
 import type { db as databaseType } from '../db/index.js';
 import {
-  adminAuditLogs, deployEnvironments, deploymentEvents, deployments, deployProjects,
+  adminAuditLogs, deployEnvironments, deploymentEvents, deployments, deployProjects, deployRepositories,
 } from '../db/schema/index.js';
+import { legacyTarget, linkLegacyDeployment, syncLegacyDeployment } from './deploy-legacy.repository.js';
 
 type AdminDatabase = typeof databaseType;
 type Transaction = Parameters<Parameters<AdminDatabase['transaction']>[0]>[0];
@@ -91,12 +92,13 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
   }
 
   async function projectData(project: Project) {
-    const [environmentCount, latest] = await Promise.all([
+    const [environmentCount, latest, catalog] = await Promise.all([
       database.select({ count: sql<number>`count(*)::int` }).from(deployEnvironments)
         .where(eq(deployEnvironments.projectId, project.id)),
       database.select({ deployment: deployments, environment: deployEnvironments }).from(deployments)
         .innerJoin(deployEnvironments, eq(deployments.environmentId, deployEnvironments.id))
         .where(eq(deployments.projectId, project.id)).orderBy(desc(deployments.createdAt)).limit(1),
+      database.select().from(deployRepositories).where(eq(deployRepositories.githubRepositoryId, project.repositoryId)),
     ]);
     return {
       id: project.id,
@@ -109,7 +111,7 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
       packageName: project.packageName,
       packagePath: project.packagePath,
       artifactPath: project.artifactPath,
-      defaultRef: project.defaultRef,
+      defaultRef: project.defaultRef ?? catalog[0]?.defaultBranch ?? '',
       migrationSupported: project.manifest.migration,
       enabled: project.enabled,
       manifestSha: project.manifestSha,
@@ -123,68 +125,84 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
 
   return {
     now,
+    async getRepository(id: string) {
+      const [row] = await database.select().from(deployRepositories).where(eq(deployRepositories.id, id));
+      return row;
+    },
+    async repositoryByGithubId(id: string) {
+      const [row] = await database.select().from(deployRepositories).where(eq(deployRepositories.githubRepositoryId, id));
+      return row;
+    },
     async synchronizeProjects(input: {
       repositoryId: string;
       repositoryFullName: string;
+      installationId: string;
+      defaultBranch: string;
+      htmlUrl: string;
       manifestSha: string;
       manifestVersion: number;
       units: DeployManifestUnit[];
       actor: Actor;
       requestId: string;
+      bootstrap?: boolean;
     }) {
       return database.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(731924, 2)`);
+        const repositoryValues = {
+          fullName: input.repositoryFullName,
+          owner: input.repositoryFullName.split('/')[0]!,
+          installationId: input.installationId,
+          defaultBranch: input.defaultBranch,
+          htmlUrl: input.htmlUrl,
+          manifestVersion: input.manifestVersion,
+          controlSha: input.manifestSha,
+          synchronizedAt: now(),
+          updatedAt: now(),
+        };
+        const [catalog] = await tx.insert(deployRepositories).values({
+          githubRepositoryId: input.repositoryId, ...repositoryValues,
+        }).onConflictDoUpdate({
+          target: deployRepositories.githubRepositoryId, set: repositoryValues,
+        }).returning();
         for (const unit of input.units) {
-          await tx.insert(deployProjects).values({
-            slug: unit.id,
+          const values = {
             name: unit.name,
             kind: unit.kind,
             repositoryId: input.repositoryId,
             repositoryFullName: input.repositoryFullName,
+            repositoryRecordId: catalog!.id,
+            targetRole: unit.targetRole,
             unitId: unit.id,
             preset: unit.preset,
             packageName: unit.packageName,
             packagePath: unit.packagePath,
             artifactPath: unit.artifactPath,
-            defaultRef: unit.defaultRef,
+            defaultRef: unit.defaultRef ?? null,
             manifest: {
               migration: unit.migration,
+              health: unit.health,
               healthPath: unit.healthPath,
-              internalReadyPath: unit.internalReadyPath,
+              ...(unit.internalReadyPath ? { internalReadyPath: unit.internalReadyPath } : {}),
+              dependencies: unit.dependencies,
+              migrationPaths: unit.migrationPaths,
               variables: unit.variables,
             },
             manifestSha: input.manifestSha,
             manifestVersion: input.manifestVersion,
             enabled: true,
             updatedAt: now(),
+          };
+          await tx.insert(deployProjects).values({
+            ...values,
+            slug: input.bootstrap ? unit.id : `r${input.repositoryId}-${unit.id}`,
           }).onConflictDoUpdate({
-            target: [deployProjects.repositoryId, deployProjects.unitId],
-            set: {
-              slug: unit.id,
-              name: unit.name,
-              kind: unit.kind,
-              repositoryFullName: input.repositoryFullName,
-              preset: unit.preset,
-              packageName: unit.packageName,
-              packagePath: unit.packagePath,
-              artifactPath: unit.artifactPath,
-              defaultRef: unit.defaultRef,
-              manifest: {
-                migration: unit.migration,
-                healthPath: unit.healthPath,
-                internalReadyPath: unit.internalReadyPath,
-                variables: unit.variables,
-              },
-              manifestSha: input.manifestSha,
-              manifestVersion: input.manifestVersion,
-              enabled: true,
-              updatedAt: now(),
-            },
+            target: [deployProjects.repositoryRecordId, deployProjects.unitId],
+            set: values,
           });
         }
         await tx.update(deployProjects).set({ enabled: false, updatedAt: now() }).where(and(
-          eq(deployProjects.repositoryId, input.repositoryId),
-          ne(deployProjects.manifestSha, input.manifestSha),
+          eq(deployProjects.repositoryRecordId, catalog!.id),
+          notInArray(deployProjects.unitId, input.units.map((unit) => unit.id)),
         ));
         await audit(tx, {
           actor: input.actor,
@@ -195,7 +213,7 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
           reason: `manifest_v${input.manifestVersion}`,
           requestId: input.requestId,
         });
-        return input.units.length;
+        return { repositoryId: catalog!.id, synchronized: input.units.length, manifestSha: input.manifestSha };
       });
     },
     async listProjects() {
@@ -218,9 +236,15 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
     },
     async createEnvironment(projectId: string, input: EnvironmentInput, actor: Actor, requestId: string) {
       return database.transaction(async (tx) => {
+        const [project] = await tx.select().from(deployProjects).where(eq(deployProjects.id, projectId));
+        const targetId = await legacyTarget(tx, {
+          role: project!.kind === 'frontend' ? 'frontend' : 'backend',
+          environment: input.name, runnerTarget: input.runnerTarget,
+        });
         const [environment] = await tx.insert(deployEnvironments).values({
           projectId,
           ...input,
+          targetId,
           updatedAt: now(),
         }).returning();
         await audit(tx, {
@@ -232,8 +256,20 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
     },
     async updateEnvironment(id: string, input: Partial<EnvironmentInput>, actor: Actor, requestId: string) {
       return database.transaction(async (tx) => {
+        const [current] = await tx.select().from(deployEnvironments).where(eq(deployEnvironments.id, id)).for('update');
+        if (!current) return undefined;
+        let targetId = current.targetId;
+        if (!targetId || (input.runnerTarget !== undefined && input.runnerTarget !== current.runnerTarget)
+          || (input.name !== undefined && input.name !== current.name)) {
+          const [project] = await tx.select().from(deployProjects).where(eq(deployProjects.id, current.projectId));
+          targetId = await legacyTarget(tx, {
+            role: project!.kind === 'frontend' ? 'frontend' : 'backend',
+            environment: input.name ?? current.name, runnerTarget: input.runnerTarget ?? current.runnerTarget,
+          });
+        }
         const [environment] = await tx.update(deployEnvironments).set({
           ...input,
+          targetId,
           updatedAt: now(),
         }).where(eq(deployEnvironments.id, id)).returning();
         if (!environment) return undefined;
@@ -319,6 +355,7 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
           rollbackOfId: input.rollbackOfId,
           createdAt: now(),
         }).returning();
+        await linkLegacyDeployment(tx, deployment!);
         await audit(tx, {
           actor: input.actor,
           action: input.rollbackOfId ? 'deploy.rollback.request' : 'deploy.request',
@@ -332,11 +369,14 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
       });
     },
     async markQueued(id: string, githubDeploymentId: string) {
-      await database.update(deployments).set({
-        githubDeploymentId,
-        status: 'queued',
-        queuedAt: now(),
-      }).where(eq(deployments.id, id));
+      await database.transaction(async (tx) => {
+        const [deployment] = await tx.update(deployments).set({
+          githubDeploymentId,
+          status: 'queued',
+          queuedAt: now(),
+        }).where(and(eq(deployments.id, id), eq(deployments.status, 'requested'))).returning();
+        if (deployment) await syncLegacyDeployment(tx, deployment);
+      });
     },
     async markError(id: string, stage: string, code: string) {
       await database.transaction(async (tx) => {
@@ -347,6 +387,7 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
           finishedAt: now(),
         }).where(eq(deployments.id, id)).returning();
         if (deployment) {
+          await syncLegacyDeployment(tx, deployment);
           await audit(tx, {
             actor: { id: deployment.actorSubject, username: deployment.actorUsername },
             action: 'deploy.error',
@@ -372,6 +413,7 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
       logUrl: string | null;
     }) {
       return database.transaction(async (tx) => {
+        await tx.execute(sql`select id from admin.deployments where id = ${input.localDeploymentId} for update`);
         const [matched] = await tx.select({ deployment: deployments, project: deployProjects, environment: deployEnvironments })
           .from(deployments)
           .innerJoin(deployProjects, eq(deployments.projectId, deployProjects.id))
@@ -392,12 +434,13 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
           status: input.status,
           description: input.description,
           logUrl: input.logUrl,
+          targetId: matched.deployment.targetId,
           receivedAt: now(),
         }).onConflictDoNothing({ target: deploymentEvents.deliveryId }).returning({ id: deploymentEvents.id });
         if (!inserted.length) return 'duplicate' as const;
         const terminal = terminalStatuses.includes(matched.deployment.status);
         if (!terminal || (matched.deployment.status === 'succeeded' && input.status === 'inactive')) {
-          await tx.update(deployments).set({
+          const [updated] = await tx.update(deployments).set({
             status: input.status,
             logUrl: input.logUrl ?? matched.deployment.logUrl,
             migrationPerformed: input.status === 'succeeded' && matched.deployment.migrationRequested
@@ -407,7 +450,8 @@ export function deployRepository(database: AdminDatabase, now = () => new Date()
             finishedAt: terminalStatuses.includes(input.status) ? now() : null,
             failureStage: ['failed', 'error'].includes(input.status) ? 'workflow' : null,
             failureCode: ['failed', 'error'].includes(input.status) ? input.status.toUpperCase() : null,
-          }).where(eq(deployments.id, matched.deployment.id));
+          }).where(eq(deployments.id, matched.deployment.id)).returning();
+          await syncLegacyDeployment(tx, updated!);
         }
         return 'updated' as const;
       });

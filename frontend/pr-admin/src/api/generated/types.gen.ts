@@ -59,6 +59,119 @@ export type CsrfInput = {
     csrfToken: string;
 };
 
+export type DeployRepository = {
+    id: string;
+    githubRepositoryId: string;
+    fullName: string;
+    owner: string;
+    installationId: string | null;
+    defaultBranch: string | null;
+    htmlUrl: string;
+    manifestPath: string;
+    manifestVersion: number | null;
+    controlSha: string | null;
+    enabled: boolean;
+    projectCount: number;
+    synchronizedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type DeployTarget = {
+    id: string;
+    key: string;
+    name: string;
+    role: 'frontend' | 'backend';
+    environment: string;
+    runnerLabel: string;
+    expectedOs: string;
+    expectedArch: string;
+    deployRoot: string;
+    configRoot: string;
+    enabled: boolean;
+    legacy: boolean;
+    agentStatus: 'pending' | 'online' | 'degraded' | 'offline' | 'disabled';
+    lastSeenAt: string | null;
+    lastSnapshotAt: string | null;
+    lastErrorCode: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type DeployReleaseBatch = {
+    id: string;
+    repositoryId: string;
+    environmentName: string;
+    mode: 'single' | 'full' | 'rollback';
+    requestedRef: string;
+    resolvedSha: string;
+    controlSha: string;
+    actorUsername: string;
+    status: 'blocked' | 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | 'cancelling' | 'cancelled';
+    legacy: boolean;
+    confirmationVerified: boolean;
+    migrationRiskAcknowledged: boolean;
+    failureStage: string | null;
+    failureCode: string | null;
+    createdAt: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+};
+
+export type DeployReleaseItem = {
+    id: string;
+    batchId: string;
+    projectId: string;
+    environmentId: string;
+    targetId: string;
+    wave: number;
+    dependencies: Array<string>;
+    desiredSha: string;
+    status: 'waiting' | 'queued' | 'building' | 'deploying' | 'verifying' | 'succeeded' | 'failed' | 'skipped' | 'cancelled' | 'inactive';
+    migrationRequired: boolean;
+    migrationGateStatus: 'not_required' | 'required' | 'verified' | 'waived' | 'legacy_unknown';
+    currentDeploymentId: string | null;
+    createdAt: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    migrationGate: DeployMigrationGate;
+};
+
+export type DeployMigrationGate = {
+    id: string;
+    releaseItemId: string;
+    unitId: string;
+    baseSha: string | null;
+    targetSha: string;
+    changedPaths: Array<string>;
+    status: 'required' | 'verified' | 'waived';
+    workflowRunId: string | null;
+    workflowRunUrl: string | null;
+    verifiedActor: string | null;
+    verifiedAt: string | null;
+    note: string | null;
+} | null;
+
+export type DeployAuditEntry = {
+    id: string;
+    actorSubject: string | null;
+    actorUsername: string | null;
+    action: string;
+    resourceType: string;
+    resourceId: string | null;
+    outcome: 'success' | 'failure';
+    reason: string;
+    requestId: string | null;
+    createdAt: string;
+    metadata: {
+        repositoryId?: string;
+        targetId?: string;
+        releaseId?: string;
+        deploymentId?: string;
+        code?: string;
+    } | null;
+};
+
 export type DeployProject = {
     id: string;
     slug: string;
@@ -358,6 +471,753 @@ export type StartAdminAuthLogoutResponses = {
 };
 
 export type StartAdminAuthLogoutResponse = StartAdminAuthLogoutResponses[keyof StartAdminAuthLogoutResponses];
+
+export type ListDeployRepositoriesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/deploy/repositories';
+};
+
+export type ListDeployRepositoriesErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type ListDeployRepositoriesError = ListDeployRepositoriesErrors[keyof ListDeployRepositoriesErrors];
+
+export type ListDeployRepositoriesResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: Array<DeployRepository>;
+    };
+};
+
+export type ListDeployRepositoriesResponse = ListDeployRepositoriesResponses[keyof ListDeployRepositoriesResponses];
+
+export type ListAvailableDeployRepositoriesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/deploy/repositories/available';
+};
+
+export type ListAvailableDeployRepositoriesErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type ListAvailableDeployRepositoriesError = ListAvailableDeployRepositoriesErrors[keyof ListAvailableDeployRepositoriesErrors];
+
+export type ListAvailableDeployRepositoriesResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: Array<{
+            githubRepositoryId: string;
+            installationId: string;
+            fullName: string;
+            defaultBranch: string;
+            htmlUrl: string;
+        }>;
+    };
+};
+
+export type ListAvailableDeployRepositoriesResponse = ListAvailableDeployRepositoriesResponses[keyof ListAvailableDeployRepositoriesResponses];
+
+export type ImportDeployRepositoryData = {
+    body: {
+        csrfToken: string;
+        githubRepositoryId: string;
+        installationId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/admin/deploy/repositories/import';
+};
+
+export type ImportDeployRepositoryErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type ImportDeployRepositoryError = ImportDeployRepositoryErrors[keyof ImportDeployRepositoryErrors];
+
+export type ImportDeployRepositoryResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: {
+            repositoryId: string;
+            synchronized: number;
+            manifestSha: string;
+        };
+    };
+};
+
+export type ImportDeployRepositoryResponse = ImportDeployRepositoryResponses[keyof ImportDeployRepositoryResponses];
+
+export type SyncDeployRepositoryData = {
+    body: CsrfInput;
+    path: {
+        repositoryId: string;
+    };
+    query?: never;
+    url: '/admin/deploy/repositories/{repositoryId}/sync';
+};
+
+export type SyncDeployRepositoryErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type SyncDeployRepositoryError = SyncDeployRepositoryErrors[keyof SyncDeployRepositoryErrors];
+
+export type SyncDeployRepositoryResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: {
+            repositoryId: string;
+            synchronized: number;
+            manifestSha: string;
+        };
+    };
+};
+
+export type SyncDeployRepositoryResponse = SyncDeployRepositoryResponses[keyof SyncDeployRepositoryResponses];
+
+export type GetDeployRepositoryData = {
+    body?: never;
+    path: {
+        repositoryId: string;
+    };
+    query?: never;
+    url: '/admin/deploy/repositories/{repositoryId}';
+};
+
+export type GetDeployRepositoryErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type GetDeployRepositoryError = GetDeployRepositoryErrors[keyof GetDeployRepositoryErrors];
+
+export type GetDeployRepositoryResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: DeployRepository;
+    };
+};
+
+export type GetDeployRepositoryResponse = GetDeployRepositoryResponses[keyof GetDeployRepositoryResponses];
+
+export type ListDeployTargetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/deploy/targets';
+};
+
+export type ListDeployTargetsErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type ListDeployTargetsError = ListDeployTargetsErrors[keyof ListDeployTargetsErrors];
+
+export type ListDeployTargetsResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: Array<DeployTarget>;
+    };
+};
+
+export type ListDeployTargetsResponse = ListDeployTargetsResponses[keyof ListDeployTargetsResponses];
+
+export type GetDeployTargetData = {
+    body?: never;
+    path: {
+        targetId: string;
+    };
+    query?: never;
+    url: '/admin/deploy/targets/{targetId}';
+};
+
+export type GetDeployTargetErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type GetDeployTargetError = GetDeployTargetErrors[keyof GetDeployTargetErrors];
+
+export type GetDeployTargetResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: DeployTarget;
+    };
+};
+
+export type GetDeployTargetResponse = GetDeployTargetResponses[keyof GetDeployTargetResponses];
+
+export type ListDeployReleasesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+        repositoryId?: string;
+        environmentName?: string;
+        status?: 'blocked' | 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | 'cancelling' | 'cancelled';
+    };
+    url: '/admin/deploy/releases';
+};
+
+export type ListDeployReleasesErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type ListDeployReleasesError = ListDeployReleasesErrors[keyof ListDeployReleasesErrors];
+
+export type ListDeployReleasesResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: {
+            items: Array<DeployReleaseBatch>;
+            nextCursor: string | null;
+        };
+    };
+};
+
+export type ListDeployReleasesResponse = ListDeployReleasesResponses[keyof ListDeployReleasesResponses];
+
+export type GetDeployReleaseData = {
+    body?: never;
+    path: {
+        releaseId: string;
+    };
+    query?: never;
+    url: '/admin/deploy/releases/{releaseId}';
+};
+
+export type GetDeployReleaseErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type GetDeployReleaseError = GetDeployReleaseErrors[keyof GetDeployReleaseErrors];
+
+export type GetDeployReleaseResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: {
+            id: string;
+            repositoryId: string;
+            environmentName: string;
+            mode: 'single' | 'full' | 'rollback';
+            requestedRef: string;
+            resolvedSha: string;
+            controlSha: string;
+            actorUsername: string;
+            status: 'blocked' | 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | 'cancelling' | 'cancelled';
+            legacy: boolean;
+            confirmationVerified: boolean;
+            migrationRiskAcknowledged: boolean;
+            failureStage: string | null;
+            failureCode: string | null;
+            createdAt: string;
+            startedAt: string | null;
+            finishedAt: string | null;
+            items: Array<DeployReleaseItem>;
+        };
+    };
+};
+
+export type GetDeployReleaseResponse = GetDeployReleaseResponses[keyof GetDeployReleaseResponses];
+
+export type ListDeployAuditData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+        actor?: string;
+        action?: string;
+        resourceType?: string;
+        resourceId?: string;
+        outcome?: 'success' | 'failure';
+        from?: string;
+        to?: string;
+    };
+    url: '/admin/deploy/audit';
+};
+
+export type ListDeployAuditErrors = {
+    /**
+     * 请求无效或登录流程过期
+     */
+    400: ErrorResponse;
+    /**
+     * 尚未登录或登录已失效
+     */
+    401: ErrorResponse;
+    /**
+     * 来源不在跨域白名单
+     */
+    403: ErrorResponse;
+    /**
+     * 资源不存在
+     */
+    404: ErrorResponse;
+    /**
+     * 存在活动发布或资源冲突
+     */
+    409: ErrorResponse;
+    /**
+     * 请求体超过限制
+     */
+    413: ErrorResponse;
+    /**
+     * 配置缺失或 Git ref 不符合环境规则
+     */
+    422: ErrorResponse;
+    /**
+     * 服务内部错误
+     */
+    500: ErrorResponse;
+    /**
+     * 上游服务不可用
+     */
+    502: ErrorResponse;
+    /**
+     * 身份服务暂不可用
+     */
+    503: ErrorResponse;
+    /**
+     * 上游请求超时
+     */
+    504: ErrorResponse;
+};
+
+export type ListDeployAuditError = ListDeployAuditErrors[keyof ListDeployAuditErrors];
+
+export type ListDeployAuditResponses = {
+    /**
+     * 请求成功
+     */
+    200: {
+        success: true;
+        data: {
+            items: Array<DeployAuditEntry>;
+            nextCursor: string | null;
+        };
+    };
+};
+
+export type ListDeployAuditResponse = ListDeployAuditResponses[keyof ListDeployAuditResponses];
 
 export type ListDeployProjectsData = {
     body?: never;

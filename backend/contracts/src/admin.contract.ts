@@ -111,6 +111,85 @@ const deployErrors = {
   422: errorResponse('配置缺失或 Git ref 不符合环境规则'),
 };
 
+const targetRoleSchema = z.enum(['frontend', 'backend']);
+const releaseStatusSchema = z.enum([
+  'blocked', 'queued', 'running', 'succeeded', 'partial', 'failed', 'cancelling', 'cancelled',
+]);
+const pageQueryShape = {
+  cursor: z.string().max(128).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+};
+const page = <T extends z.ZodType>(schema: T) => z.object({
+  items: z.array(schema), nextCursor: z.string().nullable(),
+});
+const deployRepositorySchema = z.object({
+  id: z.uuid(),
+  githubRepositoryId: z.string(),
+  fullName: z.string(),
+  owner: z.string(),
+  installationId: z.string().nullable(),
+  defaultBranch: z.string().nullable(),
+  htmlUrl: z.url(),
+  manifestPath: z.string(),
+  manifestVersion: z.number().int().nullable(),
+  controlSha: z.string().nullable(),
+  enabled: z.boolean(),
+  projectCount: z.number().int().nonnegative(),
+  synchronizedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+}).meta({ id: 'DeployRepository' });
+const repositorySyncSchema = z.object({
+  repositoryId: z.uuid(), synchronized: z.number().int().nonnegative(), manifestSha: z.string(),
+});
+const githubId = z.string().regex(/^[1-9][0-9]{0,15}$/u);
+const deployTargetSchema = z.object({
+  id: z.uuid(), key: z.string(), name: z.string(),
+  role: targetRoleSchema, environment: z.string(), runnerLabel: z.string(),
+  expectedOs: z.string(), expectedArch: z.string(), deployRoot: z.string(), configRoot: z.string(),
+  enabled: z.boolean(), legacy: z.boolean(),
+  agentStatus: z.enum(['pending', 'online', 'degraded', 'offline', 'disabled']),
+  lastSeenAt: z.iso.datetime().nullable(), lastSnapshotAt: z.iso.datetime().nullable(),
+  lastErrorCode: z.string().nullable(),
+  createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
+}).meta({ id: 'DeployTarget' });
+const releaseBatchSchema = z.object({
+  id: z.uuid(), repositoryId: z.uuid(), environmentName: z.string(),
+  mode: z.enum(['single', 'full', 'rollback']),
+  requestedRef: z.string(), resolvedSha: z.string(), controlSha: z.string(),
+  actorUsername: z.string(), status: releaseStatusSchema, legacy: z.boolean(),
+  confirmationVerified: z.boolean(), migrationRiskAcknowledged: z.boolean(),
+  failureStage: z.string().nullable(), failureCode: z.string().nullable(),
+  createdAt: z.iso.datetime(), startedAt: z.iso.datetime().nullable(), finishedAt: z.iso.datetime().nullable(),
+}).meta({ id: 'DeployReleaseBatch' });
+const migrationGateSchema = z.object({
+  id: z.uuid(), releaseItemId: z.uuid(), unitId: z.string(),
+  baseSha: z.string().nullable(), targetSha: z.string(), changedPaths: z.array(z.string()),
+  status: z.enum(['required', 'verified', 'waived']),
+  workflowRunId: z.string().nullable(), workflowRunUrl: z.string().nullable(),
+  verifiedActor: z.uuid().nullable(), verifiedAt: z.iso.datetime().nullable(), note: z.string().nullable(),
+}).meta({ id: 'DeployMigrationGate' });
+const releaseItemSchema = z.object({
+  id: z.uuid(), batchId: z.uuid(), projectId: z.uuid(), environmentId: z.uuid(), targetId: z.uuid(),
+  wave: z.number().int().nonnegative(), dependencies: z.array(z.string()), desiredSha: z.string(),
+  status: z.enum(['waiting', 'queued', 'building', 'deploying', 'verifying', 'succeeded', 'failed', 'skipped', 'cancelled', 'inactive']),
+  migrationRequired: z.boolean(),
+  migrationGateStatus: z.enum(['not_required', 'required', 'verified', 'waived', 'legacy_unknown']),
+  currentDeploymentId: z.uuid().nullable(),
+  createdAt: z.iso.datetime(), startedAt: z.iso.datetime().nullable(), finishedAt: z.iso.datetime().nullable(),
+  migrationGate: migrationGateSchema.nullable(),
+}).meta({ id: 'DeployReleaseItem' });
+const auditEntrySchema = z.object({
+  id: z.uuid(), actorSubject: z.uuid().nullable(), actorUsername: z.string().nullable(),
+  action: z.string(), resourceType: z.string(), resourceId: z.string().nullable(),
+  outcome: z.enum(['success', 'failure']), reason: z.string(), requestId: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  metadata: z.object({
+    repositoryId: z.uuid().optional(), targetId: z.uuid().optional(),
+    releaseId: z.uuid().optional(), deploymentId: z.uuid().optional(), code: z.string().optional(),
+  }).nullable(),
+}).meta({ id: 'DeployAuditEntry' });
+
 export const adminContract = {
   service: 'pr-admin',
   namespace: '/admin',
@@ -139,6 +218,77 @@ export const adminContract = {
       summary: '退出管理平台并开始统一退出', exposure: 'public', clients: ['pr-admin'],
       request: { body: jsonBody(csrfInputSchema) },
       responses: { 200: success(resumeDataSchema), ...authErrors },
+    },
+    listDeployRepositories: {
+      operationId: 'listDeployRepositories', method: 'get', path: '/deploy/repositories',
+      summary: '查询已同步仓库目录', exposure: 'public', clients: ['pr-admin'],
+      responses: { 200: success(z.array(deployRepositorySchema)), ...deployErrors },
+    },
+    listAvailableDeployRepositories: {
+      operationId: 'listAvailableDeployRepositories', method: 'get', path: '/deploy/repositories/available',
+      summary: '查询 GitHub App 可导入仓库', exposure: 'public', clients: ['pr-admin'],
+      responses: { 200: success(z.array(z.object({
+        githubRepositoryId: githubId, installationId: githubId,
+        fullName: z.string(), defaultBranch: z.string(), htmlUrl: z.url(),
+      }))), ...deployErrors },
+    },
+    importDeployRepository: {
+      operationId: 'importDeployRepository', method: 'post', path: '/deploy/repositories/import',
+      summary: '校验并导入 GitHub 仓库与发布清单', exposure: 'public', clients: ['pr-admin'],
+      request: { body: jsonBody(z.strictObject({
+        csrfToken: z.string().min(1).max(512), githubRepositoryId: githubId, installationId: githubId,
+      })) },
+      responses: { 200: success(repositorySyncSchema), ...deployErrors },
+    },
+    syncDeployRepository: {
+      operationId: 'syncDeployRepository', method: 'post', path: '/deploy/repositories/{repositoryId}/sync',
+      summary: '从仓库默认分支同步发布清单', exposure: 'public', clients: ['pr-admin'],
+      request: { params: z.object({ repositoryId: z.uuid() }), body: jsonBody(csrfInputSchema) },
+      responses: { 200: success(repositorySyncSchema), ...deployErrors },
+    },
+    getDeployRepository: {
+      operationId: 'getDeployRepository', method: 'get', path: '/deploy/repositories/{repositoryId}',
+      summary: '查询仓库目录详情', exposure: 'public', clients: ['pr-admin'],
+      request: { params: z.object({ repositoryId: z.uuid() }) },
+      responses: { 200: success(deployRepositorySchema), ...deployErrors },
+    },
+    listDeployTargets: {
+      operationId: 'listDeployTargets', method: 'get', path: '/deploy/targets',
+      summary: '查询目标主机目录', exposure: 'public', clients: ['pr-admin'],
+      responses: { 200: success(z.array(deployTargetSchema)), ...deployErrors },
+    },
+    getDeployTarget: {
+      operationId: 'getDeployTarget', method: 'get', path: '/deploy/targets/{targetId}',
+      summary: '查询目标主机详情（不包含凭据）', exposure: 'public', clients: ['pr-admin'],
+      request: { params: z.object({ targetId: z.uuid() }) },
+      responses: { 200: success(deployTargetSchema), ...deployErrors },
+    },
+    listDeployReleases: {
+      operationId: 'listDeployReleases', method: 'get', path: '/deploy/releases',
+      summary: '分页查询发布批次', exposure: 'public', clients: ['pr-admin'],
+      request: { query: z.object({
+        ...pageQueryShape, repositoryId: z.uuid().optional(),
+        environmentName: z.string().max(255).optional(), status: releaseStatusSchema.optional(),
+      }) },
+      responses: { 200: success(page(releaseBatchSchema)), ...deployErrors },
+    },
+    getDeployRelease: {
+      operationId: 'getDeployRelease', method: 'get', path: '/deploy/releases/{releaseId}',
+      summary: '查询批次、发布项和迁移门禁', exposure: 'public', clients: ['pr-admin'],
+      request: { params: z.object({ releaseId: z.uuid() }) },
+      responses: { 200: success(releaseBatchSchema.extend({ items: z.array(releaseItemSchema) })), ...deployErrors },
+    },
+    listDeployAudit: {
+      operationId: 'listDeployAudit', method: 'get', path: '/deploy/audit',
+      summary: '分页查询发布审计摘要', exposure: 'public', clients: ['pr-admin'],
+      request: { query: z.object({
+        ...pageQueryShape,
+        actor: z.string().max(255).optional(), action: z.string().max(255).optional(),
+        resourceType: z.string().max(255).optional(), resourceId: z.string().max(255).optional(),
+        outcome: z.enum(['success', 'failure']).optional(),
+        from: z.iso.datetime().optional(), to: z.iso.datetime().optional(),
+      }) },
+      responses: { 200: success(page(auditEntrySchema)), ...deployErrors },
     },
     listDeployProjects: {
       operationId: 'listDeployProjects', method: 'get', path: '/deploy/projects',

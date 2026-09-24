@@ -294,14 +294,14 @@ SSO 本地日常联调使用 `pnpm dev` 的 localhost:5175；生产模式必须�
 
 ## Admin 发布平台
 
-`deploy.manifest.json` 登记 3 个前端和 4 个后端 unit。Admin 只接受两个固定 preset，不保存任意 shell 命令：
+`deploy.manifest.json` V2 登记 3 个前端和 4 个后端 unit。Admin 与 runner 校验器兼容 V1/V2，拒绝未知字段、越界路径、重复变量、敏感 build variable、未知依赖和依赖环。V2 明确 `targetRole`、`dependencies`、`migrationPaths`、`health.publicPath`/`health.internalReadyPath`；迁移 unit 必须声明迁移路径。省略 `defaultRef` 时使用 GitHub 默认分支（不假定 main），显式 ref 在同步前校验存在。当前依赖波次为三个 API → Gateway → 三个前端，波次执行器尚未接入。Admin 只接受两个固定 preset，不保存任意 shell 命令：
 
 - `pnpm-vite-static-v1`：生成 API、目标类型检查和 Vite build。
 - `pnpm-node-service-v1`：生成 API、按需构建 database、目标类型检查/build，再用 `pnpm deploy --prod --legacy` 生成独立生产包。
 
 发布链路为 Admin → GitHub Deployment → GitHub-hosted runner 构建 → Linux self-hosted runner 安装。Admin 在创建 deployment 前把 branch/tag/SHA 解析为不可变 commit SHA；production 环境仍需配置允许的主分支或版本 tag。每项目一条永久分支不是推荐模式，共享 contracts/database/Gateway 会产生长期漂移；使用主干开发、临时功能分支发 staging、版本 tag 发 production 更可控。
 
-每个“项目 + 环境”使用独立 GitHub Environment。manifest 中 `build` 非敏感变量可进入制品构建；`runtime` 变量/secret 只注入目标 runner；`migration` secret 只进入迁移子进程，不写入长期 `runtime.env`。Admin 读取普通变量值与 secret 名称来判断完整性，永不读取 secret value。`VITE_*` 会进入浏览器资源，不能保存密钥。
+每个“项目 + 环境”使用独立 GitHub Environment。manifest 中 `build` 非敏感变量可进入制品构建；`runtime` 变量/secret 只注入目标 runner；`migration` secret 只进入迁移子进程，不写入长期 `runtime.env`。Admin 先读取 Environment 本体，404 表示不存在，再读取普通变量值与 secret 名称来判断完整性，永不读取 secret value。`VITE_*` 会进入浏览器资源，不能保存密钥。
 
 目标 runner 只支持 `staging`、`production` 两个受控 label，必须是专用 Linux/x64 用户且不能运行 PR/fork 构建。它不 checkout 应用源码、不安装依赖、不执行构建；安装工具从当前 workflow commit 读取，应用制品使用 tar 保留 pnpm 内部链接并逐项校验 SHA256。默认目录：
 
@@ -318,17 +318,37 @@ Nginx 的前端 root 指向对应 `current`，后端由 `deploy/pm2/ecosystem.co
 首次启用：
 
 1. 在 GitHub 创建 App，授予目标仓库 Contents 读取、Deployments 读写、Environments 读取，并把 webhook 指向 `/api/admin/deploy/github/events`。
-2. 在 pr-admin 配置 App ID、installation ID、私钥路径、webhook secret、仓库和 owner/runner 白名单。
+2. 在 pr-admin 配置 App ID、私钥路径、webhook secret 和 owner/runner 白名单。`GITHUB_REPOSITORY` 与 `GITHUB_INSTALLATION_ID` 仅作为旧“同步项目”入口的可选兼容配置，必须成对提供；新导入仓库的标识与 installation 保存在数据库。
 3. 为每个 unit/environment 创建 GitHub Environment，按 manifest 配置 variables/secrets；基础设施变量 `DEPLOY_ROOT`、`DEPLOY_CONFIG_ROOT` 可覆盖默认目录。
 4. 在目标机安装 Node.js 24、PM2、`flock`、Nginx 和带 `staging`/`production` 标签的专用 self-hosted runner，授权其对应 `/srv`、`/etc` 目录。
-5. 执行 auth `0003`、admin `0002` 迁移，提升至少一个已有账号为 `super`，部署 Auth、Gateway、Admin API/Web 后从 Admin 同步 manifest。
+5. 显式执行 Auth/Admin 的全部待执行迁移（Admin 当前到 `0005`），确认至少一个账号为 `super`，部署 Auth、Gateway、Admin API/Web 后从 Admin 同步 manifest。已有正常 super 登录不需要重复 bootstrap 或生成密钥。
 
 ```sh
 pnpm deploy:validate
 pnpm --filter @my-sp-pr/pr-auth-api auth:set-role owner super
 ```
 
-GitHub Environments、域名/TLS、数据库角色和目标目录仍需一次性人工准备。未来仓库导入可复用 manifest/preset，但不会自动创建本系统 API 契约、Gateway 上游、数据库 namespace 或域名。
+GitHub Environments、域名/TLS、数据库角色和目标目录仍需一次性人工准备。仓库导入可复用 manifest/preset，但不会自动创建本系统 API 契约、Gateway 上游、数据库 namespace 或域名。
+
+部署平台 M1 已增加仓库、目标主机、Agent 凭据/快照、发布批次/发布项、迁移门禁模型。`0003_deployment_platform_models` 与 `0004_deployment_platform_backfill` 为增量迁移；旧项目、环境、发布、事件和审计不删除。升级前暂停 Admin 写入，使用迁移账号显式执行 `pnpm --filter @my-sp-pr/pr-admin-api db:migrate`，完成后再启动新版本。开发、构建和启动不会自动迁移。
+
+M2 增加 `0005_repository_manifest_v2`：默认 ref 可空，unit 唯一性使用目录仓库 ID + unit ID。同步保留已有项目 ID/slug、环境和发布记录；新仓库 slug 为 `r<GitHub repository ID>-<unit ID>`。仓库信息、unit 增改、移除 unit 停用和成功审计在同一事务提交；验证失败不改写旧目录。构建和安装工具已支持 V2。
+
+新增三个经 Gateway、仅 super 可用的接口：
+
+| 接口 | 输入与用途 |
+| --- | --- |
+| `GET /api/admin/deploy/repositories/available` | 分页读取 App 可见 installation 的仓库，过滤 owner 白名单和暂停 installation；返回仓库 ID、installation ID、默认分支与链接，不返回 token |
+| `POST /api/admin/deploy/repositories/import` | JSON：`csrfToken`、字符串 `githubRepositoryId`、字符串 `installationId`；验证可见性、默认分支清单、`.github/workflows/deploy.yml` 存在及显式 refs 后导入 |
+| `POST /api/admin/deploy/repositories/{repositoryId}/sync` | 路径使用目录 UUID，JSON：`csrfToken`；从该仓库真实默认分支重新同步并固定 control SHA |
+
+写操作同时校验登录会话、Origin 和 CSRF。installation token 独立缓存及并发刷新；配置检查、ref 查询、旧发布请求按项目仓库选择客户端，webhook 校验目录中的仓库 ID/名称/installation。仓库发现单次最多 10 页 installation、每 installation 10 页仓库且总数最多 1000，超过上限报错，不静默截断。仓库导入 UI 将在后续页面接入阶段实现，当前可使用生成 SDK 调用。
+
+`GET /api/admin/deploy/repositories`、`targets`、`releases` 及各自 `/{id}` 详情，还有 `/api/admin/deploy/audit` 已提供真实查询，均经 Gateway 并要求 super。release/audit 支持 `limit` 和返回的 `nextCursor`；audit 还支持 actor/action/resourceType/resourceId/outcome/from/to 筛选。当前前端页面尚未全部接入这些接口。
+
+旧记录以 `legacy=true` 批次保留每 unit 并发语义；legacy target 停用且 pending，不代表真实主机在线。旧迁移请求为 `legacy_unknown`，不生成已验证门禁。旧发布入口继续在事务中维护这些关联；Agent、精确 runner 路由、发布签名和新批次执行尚待后续里程碑，不能将仓库导入和 Manifest V2 就绪当作三机发布已可用。现有 workflow 仍限定当前七个 unit，新仓库还需后续部署流程与主机绑定配置。
+
+当前生产计划为 Ubuntu 24：Chat `https://xpeach.top`、Admin `https://admin.xpeach.top`、SSO `https://sso.xpeach.top`。前端与后端 `82.157.201.240` 通过公网通信，需前端 Nginx → 校验证书的后端 TLS 入口 → loopback Gateway；后端入口限制前端出口 IP，业务 API/PostgreSQL 保持 loopback。物理机 frpc 连接前端 frps，不能据此假设存在可信私网。TLS 入口域名/端口、前端出口 IP、frp 认证/加密和 runner 信息仍需落实；本地 localhost 登录配置保持独立。生产计划首期无数据库备份、无主机高可用，代码回滚不恢复数据；人工迁移 workflow 尚未替换旧 MVP 迁移执行方式。
 
 ## SSO 配置、数据与权限
 
@@ -389,6 +409,6 @@ server {
 
 同机配置 Gateway `TRUSTED_PROXY_CIDRS=loopback`，两端 `SSO_PUBLIC_ORIGIN=https://sso.example.com`。pr-auth 的 portal 兑换需要服务端能访问这个固定 issuer 的 token/UserInfo/JWKS 路径，请保证 DNS、TLS 和入口回环可达。
 
-SSO 验证：`pnpm verify:auth` 需要显式 DATABASE_VERIFY_ADMIN_URL，默认读取 pr-auth/.env 中运行/迁移连接，可用 DATABASE_VERIFY_AUTH_URL、DATABASE_VERIFY_AUTH_MIGRATION_URL、DATABASE_VERIFY_SSL_MODE 指向独立测试集群。Admin 验证使用 `pnpm verify:admin`，默认读取 pr-admin/.env，可用 `DATABASE_VERIFY_ADMIN_RUNTIME_URL` 和 `DATABASE_VERIFY_ADMIN_MIGRATION_URL` 覆盖；它验证一次性登录 flow、refresh/角色撤销、super 授权、manifest 同步、SHA 固定、并发锁及 webhook 验签/重放。脚本只操作新建临时库并最终清理。`verify:database` 另覆盖三服务数据库故障/恢复。
+SSO 验证：`pnpm verify:auth` 需要显式 DATABASE_VERIFY_ADMIN_URL，默认读取 pr-auth/.env 中运行/迁移连接，可用 DATABASE_VERIFY_AUTH_URL、DATABASE_VERIFY_AUTH_MIGRATION_URL、DATABASE_VERIFY_SSL_MODE 指向独立测试集群。Admin 验证使用 `pnpm verify:admin`，默认读取 pr-admin/.env，可用 `DATABASE_VERIFY_ADMIN_RUNTIME_URL` 和 `DATABASE_VERIFY_ADMIN_MIGRATION_URL` 覆盖；它验证一次性登录 flow、refresh/角色撤销、super 授权、manifest 同步、SHA 固定、并发锁及 webhook 验签/重放，并验证空库迁移、0002 历史样例升级、legacy 关联、DML 权限、批次/发布项/attempt/token 约束及经 Gateway 的目录查询。M2 另覆盖 V1/V2 解析器一致性、DAG、分页、installation token 隔离与刷新、仓库可见性、master 回退、缺失 ref/workflow、同步事务回滚、跨仓库请求和 Gateway 写操作的 Origin/CSRF。GitHub 使用本地 HTTP 测试服务，OIDC 使用测试替身，数据库和 Gateway HTTP 链路真实执行；不代表生产 GitHub App 或三台主机已连通。脚本只操作新建临时库并最终清理。`verify:database` 另覆盖三服务数据库故障/恢复。
 
 跨主域接入通过顶层导航到固定 issuer，未来应用各自保存本域会话；仍需在真实 HTTPS 不同站点部署后验收。聊天长连接的 SSE/WebSocket、心跳和超时另行设计。
