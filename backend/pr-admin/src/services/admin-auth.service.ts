@@ -158,11 +158,17 @@ export function adminAuthService(
         state, nonce, verifier, binding, returnPath: browser.returnPath(returnTo),
       });
       browser.setCookie(response, browser.names.flow, flowToken, browser.flowSeconds);
+      // #region debug-point B:login-start
+      void fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'admin-login-no-redirect', runId: 'pre-fix', hypothesisId: 'B', location: 'admin-auth.service.ts:start', msg: '[DEBUG] Admin login flow created', data: { requestHost: request.headers.host ?? null, configuredOrigin: config.adminOrigin, returnPath: browser.returnPath(returnTo), bindingCookiePresent: Boolean(browser.getCookie(request, browser.names.binding)) }, ts: Date.now() }) }).catch(() => undefined);
+      // #endregion
       return url.href;
     },
     async complete(request: Request, response: Response) {
       const stateValues = new URL(request.originalUrl, config.adminOrigin).searchParams.getAll('state');
       const flowToken = browser.getCookie(request, browser.names.flow);
+      // #region debug-point B:callback-entry
+      void fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'admin-login-no-redirect', runId: 'pre-fix', hypothesisId: 'B', location: 'admin-auth.service.ts:complete', msg: '[DEBUG] Admin callback received', data: { requestHost: request.headers.host ?? null, configuredOrigin: config.adminOrigin, stateCount: stateValues.length, flowCookiePresent: Boolean(flowToken), bindingCookiePresent: Boolean(browser.getCookie(request, browser.names.binding)) }, ts: Date.now() }) }).catch(() => undefined);
+      // #endregion
       if (stateValues.length !== 1 || !flowToken) {
         throw new AppError(400, 'AUTH_FLOW_INVALID', '登录回调无效');
       }
@@ -196,6 +202,9 @@ export function adminAuthService(
           absoluteExpiresAt,
         }, browser.getCookie(request, browser.names.session));
         browser.setCookie(response, browser.names.session, sessionToken, browser.sessionSeconds);
+        // #region debug-point D:callback-complete
+        void fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'admin-login-no-redirect', runId: 'pre-fix', hypothesisId: 'D', location: 'admin-auth.service.ts:complete', msg: '[DEBUG] Admin callback completed', data: { requestHost: request.headers.host ?? null, returnPath: flow.returnPath, sessionCreated: true }, ts: Date.now() }) }).catch(() => undefined);
+        // #endregion
         return flow.returnPath;
       } catch (error) {
         if (error instanceof AppError) throw error;

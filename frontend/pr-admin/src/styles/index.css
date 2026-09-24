@@ -30,6 +30,21 @@
   .app-header {
     border-bottom: 1px solid var(--app-border);
     background: var(--app-surface);
+    line-height: normal;
+  }
+
+  .platform-nav {
+    align-self: stretch;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .platform-menu.ant-menu-horizontal {
+    min-width: max-content;
+    height: 100%;
+    border-bottom: 0;
+    background: transparent;
+    line-height: 63px;
   }
 
   .app-sidebar.ant-layout-sider {

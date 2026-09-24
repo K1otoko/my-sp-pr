@@ -7,6 +7,9 @@ export function adminAuthHandlers(auth: AdminAuthService) {
   const getSession: RequestHandler = async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
     const principal = await auth.readSession(request, response);
+    // #region debug-point E:session-read
+    void fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'admin-login-no-redirect', runId: 'pre-fix', hypothesisId: 'E', location: 'auth.controller.ts:getSession', msg: '[DEBUG] Admin session checked', data: { requestHost: request.headers.host ?? null, sessionCookiePresent: Boolean(auth.browser.getCookie(request, auth.browser.names.session)), bindingCookiePresent: Boolean(auth.browser.getCookie(request, auth.browser.names.binding)), authenticated: Boolean(principal) }, ts: Date.now() }) }).catch(() => undefined);
+    // #endregion
     const data = principal ? {
       authenticated: true as const,
       user: principal.user,
@@ -33,6 +36,9 @@ export function adminAuthHandlers(auth: AdminAuthService) {
         code: error instanceof AppError ? error.code : 'INTERNAL_ERROR',
         type: error instanceof Error ? error.name : 'UnknownError',
       });
+      // #region debug-point C:callback-error
+      void fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'admin-login-no-redirect', runId: 'pre-fix', hypothesisId: 'C', location: 'auth.controller.ts:completeLogin', msg: '[DEBUG] Admin callback failed', data: { requestHost: request.headers.host ?? null, code: error instanceof AppError ? error.code : 'INTERNAL_ERROR', type: error instanceof Error ? error.name : 'UnknownError' }, ts: Date.now() }) }).catch(() => undefined);
+      // #endregion
       const code = error instanceof AppError ? error.code : 'AUTH_FLOW_INVALID';
       response.redirect(303, `/auth/error?code=${encodeURIComponent(code)}`);
     }

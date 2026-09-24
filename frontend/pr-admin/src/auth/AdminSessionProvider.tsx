@@ -54,7 +54,11 @@ export function AdminSessionProvider({ children }: PropsWithChildren) {
       error: sessionRequest.error,
       refresh: () => sessionRequest.refresh(),
       login: (returnTo = `${window.location.pathname}${window.location.search}`) => {
-        window.location.assign(`/api/admin/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
+        const target = `/api/admin/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
+        // #region debug-point A:login-click
+        void fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'admin-login-no-redirect', runId: 'pre-fix', hypothesisId: 'A', location: 'AdminSessionProvider.tsx:login', msg: '[DEBUG] Admin login navigation requested', data: { origin: window.location.origin, returnTo, target }, ts: Date.now() }) }).catch(() => undefined);
+        // #endregion
+        window.location.assign(target);
       },
       logout: logoutRequest.runAsync,
       logoutLoading: logoutRequest.loading,

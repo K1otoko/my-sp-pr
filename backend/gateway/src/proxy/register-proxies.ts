@@ -23,7 +23,8 @@ export function registerProxies(app: Express) {
     const proxy = createProxyMiddleware({
       target: upstreams[service.service],
       changeOrigin: true,
-      proxyTimeout: service.service === 'pr-auth' ? env.authFlowTimeoutMs : env.upstreamTimeoutMs,
+      proxyTimeout: ['pr-auth', 'pr-admin'].includes(service.service)
+        ? env.authFlowTimeoutMs : env.upstreamTimeoutMs,
       // 使用自定义错误响应；保留代理事件和底层 error 监听。
       ejectPlugins: true,
       plugins: [debugProxyErrorsPlugin, proxyEventsPlugin],
